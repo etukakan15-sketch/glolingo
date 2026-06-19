@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useAuth } from "./context/AuthContext";
 
 const COLORS = {
   primary: "#00C896",
@@ -570,6 +571,7 @@ const Meeting = () => {
 
 // ─── SIGN UP ─────────────────────────────────────────────────────────────────
 const SignUp = ({ setPage }) => {
+  const { signUp } = useAuth();
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
@@ -584,6 +586,9 @@ const SignUp = ({ setPage }) => {
   const [submitted, setSubmitted] = useState(false);
   const [adFree, setAdFree] = useState(false);
   const [payMethod, setPayMethod] = useState("card");
+  const [errors, setErrors] = useState({});
+  const [authError, setAuthError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const topLangs = ["Yoruba","Igbo","Nigerian Pidgin","Kiswahili","Spanish","French","Mandarin","Arabic","Portuguese","Hausa"];
   const useCases = [
@@ -600,11 +605,71 @@ const SignUp = ({ setPage }) => {
     { id: "elite", label: "Elite", price: "$19.99/mo", features: "Voice cloning, API access, VIP support" },
   ];
 
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const validateStep1 = () => {
+    const errs = {};
+    if (!email.trim()) errs.email = "Email is required.";
+    else if (!emailRegex.test(email)) errs.email = "Enter a valid email address.";
+    if (!pass) errs.pass = "Password is required.";
+    else if (pass.length < 8) errs.pass = "At least 8 characters required.";
+    else if (!/[A-Z]/.test(pass)) errs.pass = "Include at least one uppercase letter.";
+    else if (!/[a-z]/.test(pass)) errs.pass = "Include at least one lowercase letter.";
+    else if (!/[0-9]/.test(pass)) errs.pass = "Include at least one number.";
+    if (isCompany && !companyName.trim()) errs.companyName = "Company name is required.";
+    return errs;
+  };
+
+  const authErrorMessage = (code) => {
+    switch (code) {
+      case "auth/email-already-in-use": return "This email is already registered. Try signing in.";
+      case "auth/invalid-email": return "Invalid email address.";
+      case "auth/weak-password": return "Password is too weak. Try a stronger one.";
+      case "auth/network-request-failed": return "Network error. Check your connection.";
+      case "auth/too-many-requests": return "Too many attempts. Please try again later.";
+      default: return "Sign up failed. Please try again.";
+    }
+  };
+
+  const handleStep1Continue = () => {
+    const errs = validateStep1();
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    setErrors({});
+    setStep(2);
+  };
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    setAuthError("");
+    try {
+      await signUp(email, pass, {
+        plan: accountType,
+        useCase,
+        languages: langs,
+        isCompany,
+        companyName: isCompany ? companyName : null,
+        tvBrand: tv || null,
+        streamingDevices: streaming,
+        adFree,
+        paymentMethod: accountType !== "free" ? payMethod : null,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      setAuthError(authErrorMessage(err.code));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ErrMsg = ({ msg }) => msg ? (
+    <div style={{ color: COLORS.red, fontSize: 12, marginTop: 4 }}>{msg}</div>
+  ) : null;
+
   if (submitted) return (
     <div style={{ padding: 40, textAlign: "center", maxWidth: 500, margin: "0 auto" }}>
       <div style={{ fontSize: 64, marginBottom: 16 }}>✦</div>
       <h2 style={{ color: COLORS.primary, marginBottom: 12 }}>You're in!</h2>
-      <p style={{ color: COLORS.text, marginBottom: 8 }}>Check your email to activate your trial.</p>
+      <p style={{ color: COLORS.text, marginBottom: 8 }}>Check your email to verify your account.</p>
       <p style={{ color: COLORS.textMuted, fontSize: 14, marginBottom: 24 }}>Auto-download link for mobile app sent.</p>
       <Btn onClick={() => setPage("home")}>Go to GloLingo →</Btn>
     </div>
@@ -641,20 +706,31 @@ const SignUp = ({ setPage }) => {
               <input type="checkbox" id="company" checked={isCompany} onChange={e => setIsCompany(e.target.checked)} />
               <label htmlFor="company" style={{ color: COLORS.text, fontSize: 14, cursor: "pointer" }}>Sign up as a Company</label>
             </div>
-            {isCompany && <Input placeholder="Company Name" value={companyName} onChange={e => setCompanyName(e.target.value)} style={{ marginBottom: 8 }} />}
+            {isCompany && (
+              <>
+                <Input placeholder="Company Name" value={companyName} onChange={e => { setCompanyName(e.target.value); setErrors(p => ({ ...p, companyName: "" })); }} style={{ marginBottom: 4 }} />
+                <ErrMsg msg={errors.companyName} />
+              </>
+            )}
           </div>
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Email*</div>
-            <Input type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+            <Input type="email" placeholder="you@example.com" value={email}
+              onChange={e => { setEmail(e.target.value); setErrors(p => ({ ...p, email: "" })); }}
+              style={{ borderColor: errors.email ? COLORS.red : undefined }} />
+            <ErrMsg msg={errors.email} />
           </div>
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Password*</div>
             <div style={{ position: "relative" }}>
-              <Input type={showPass ? "text" : "password"} placeholder="Create password" value={pass} onChange={e => setPass(e.target.value)} />
+              <Input type={showPass ? "text" : "password"} placeholder="Min 8 chars, upper, lower & number" value={pass}
+                onChange={e => { setPass(e.target.value); setErrors(p => ({ ...p, pass: "" })); }}
+                style={{ borderColor: errors.pass ? COLORS.red : undefined }} />
               <span onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: COLORS.textMuted, fontSize: 13 }}>
                 {showPass ? "Hide" : "Show"}
               </span>
             </div>
+            <ErrMsg msg={errors.pass} />
           </div>
           {accountType !== "free" && (
             <div style={{ marginBottom: 16 }}>
@@ -671,7 +747,10 @@ const SignUp = ({ setPage }) => {
             </div>
           )}
           <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>Your free trial includes full access to all features.</div>
-          <Btn onClick={() => setStep(2)}>Continue →</Btn>
+          <Btn onClick={handleStep1Continue}>Continue →</Btn>
+          <div style={{ marginTop: 12, fontSize: 13, color: COLORS.textMuted, textAlign: "center" }}>
+            Already have an account? <span style={{ color: COLORS.primary, cursor: "pointer" }} onClick={() => setPage("login")}>Sign in</span>
+          </div>
         </Card>
       )}
 
@@ -699,7 +778,10 @@ const SignUp = ({ setPage }) => {
               </div>
             </Card>
           )}
-          <Btn onClick={() => setStep(3)}>Continue →</Btn>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Btn variant="ghost" onClick={() => setStep(1)}>← Back</Btn>
+            <Btn onClick={() => setStep(3)}>Continue →</Btn>
+          </div>
         </Card>
       )}
 
@@ -718,7 +800,10 @@ const SignUp = ({ setPage }) => {
             ))}
           </div>
           <Input placeholder="Other language..." style={{ marginBottom: 16 }} />
-          <Btn onClick={() => setStep(4)}>Continue →</Btn>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Btn variant="ghost" onClick={() => setStep(2)}>← Back</Btn>
+            <Btn onClick={() => setStep(4)}>Continue →</Btn>
+          </div>
         </Card>
       )}
 
@@ -742,9 +827,96 @@ const SignUp = ({ setPage }) => {
           <div style={{ background: `${COLORS.primary}11`, borderRadius: 10, padding: 14, marginBottom: 20, fontSize: 14, color: COLORS.textMuted }}>
             Over 5,000 creators are already breaking language barriers. Ready to join them?
           </div>
-          <Btn onClick={() => setSubmitted(true)}>✦ Start Free Trial</Btn>
+          {authError && (
+            <div style={{ background: `${COLORS.red}18`, border: `1px solid ${COLORS.red}44`, borderRadius: 8, padding: "10px 14px", color: COLORS.red, fontSize: 13, marginBottom: 14 }}>
+              {authError}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10 }}>
+            <Btn variant="ghost" onClick={() => setStep(3)}>← Back</Btn>
+            <Btn onClick={handleSubmit} style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto" }}>
+              {loading ? "Creating account…" : "✦ Start Free Trial"}
+            </Btn>
+          </div>
         </Card>
       )}
+    </div>
+  );
+};
+
+// ─── LOGIN ────────────────────────────────────────────────────────────────────
+const Login = ({ setPage }) => {
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const authErrorMessage = (code) => {
+    switch (code) {
+      case "auth/user-not-found":
+      case "auth/wrong-password":
+      case "auth/invalid-credential": return "Incorrect email or password.";
+      case "auth/invalid-email": return "Enter a valid email address.";
+      case "auth/too-many-requests": return "Too many attempts. Please try again later.";
+      case "auth/network-request-failed": return "Network error. Check your connection.";
+      default: return "Sign in failed. Please try again.";
+    }
+  };
+
+  const handleSubmit = async () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim() || !pass) { setError("Email and password are required."); return; }
+    if (!emailRegex.test(email)) { setError("Enter a valid email address."); return; }
+    setLoading(true);
+    setError("");
+    try {
+      await login(email, pass);
+      setPage("home");
+    } catch (err) {
+      setError(authErrorMessage(err.code));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 24, maxWidth: 440, margin: "0 auto" }}>
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
+        <div style={{ fontSize: 13, letterSpacing: 2, color: COLORS.primary, marginBottom: 8 }}>WELCOME BACK</div>
+        <h2 style={{ color: COLORS.text, margin: "0 0 6px" }}>Sign in to GloLingo</h2>
+        <p style={{ color: COLORS.textMuted, fontSize: 14 }}>Continue breaking language barriers.</p>
+      </div>
+      <Card>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Email</div>
+          <Input type="email" placeholder="you@example.com" value={email}
+            onChange={e => { setEmail(e.target.value); setError(""); }} />
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 6 }}>Password</div>
+          <div style={{ position: "relative" }}>
+            <Input type={showPass ? "text" : "password"} placeholder="Your password" value={pass}
+              onChange={e => { setPass(e.target.value); setError(""); }} />
+            <span onClick={() => setShowPass(!showPass)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: COLORS.textMuted, fontSize: 13 }}>
+              {showPass ? "Hide" : "Show"}
+            </span>
+          </div>
+        </div>
+        {error && (
+          <div style={{ background: `${COLORS.red}18`, border: `1px solid ${COLORS.red}44`, borderRadius: 8, padding: "10px 14px", color: COLORS.red, fontSize: 13, marginBottom: 14 }}>
+            {error}
+          </div>
+        )}
+        <Btn onClick={handleSubmit} style={{ width: "100%", justifyContent: "center", opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto" }}>
+          {loading ? "Signing in…" : "Sign In →"}
+        </Btn>
+        <div style={{ marginTop: 14, fontSize: 13, color: COLORS.textMuted, textAlign: "center" }}>
+          Don't have an account?{" "}
+          <span style={{ color: COLORS.primary, cursor: "pointer" }} onClick={() => setPage("signup")}>Sign up free</span>
+        </div>
+      </Card>
     </div>
   );
 };
@@ -1214,8 +1386,13 @@ const OwnerPortal = () => {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function GloLingo() {
+  const { currentUser, logout } = useAuth();
   const [page, setPage] = useState("home");
-  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await logout();
+    setPage("home");
+  };
 
   const pages = {
     home: <HomePage setPage={setPage} />,
@@ -1227,11 +1404,10 @@ export default function GloLingo() {
     cast: <CastTV />,
     advertiser: <Advertiser />,
     signup: <SignUp setPage={setPage} />,
+    login: <Login setPage={setPage} />,
     admin: <AdminDashboard setPage={setPage} />,
     owner: <OwnerPortal />,
   };
-
-  const currentNav = NAV_ITEMS.find(n => n.id === page);
 
   return (
     <div style={{ minHeight: "100vh", background: COLORS.darker, color: COLORS.text, fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
@@ -1243,7 +1419,7 @@ export default function GloLingo() {
           </div>
           {/* Desktop nav */}
           <div style={{ display: "flex", gap: 4, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
-            {NAV_ITEMS.map(n => (
+            {NAV_ITEMS.filter(n => n.id !== "signup").map(n => (
               <button key={n.id} onClick={() => setPage(n.id)}
                 style={{ background: page === n.id ? `${COLORS.primary}22` : "transparent", color: page === n.id ? COLORS.primary : COLORS.textMuted,
                   border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", flexShrink: 0 }}>
@@ -1251,10 +1427,22 @@ export default function GloLingo() {
               </button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
             <Btn small variant="ghost" onClick={() => setPage("admin")}>Admin</Btn>
             <Btn small variant="ghost" onClick={() => setPage("owner")} style={{ color: COLORS.gold }}>Owner</Btn>
-            <Btn small onClick={() => setPage("signup")}>Sign Up</Btn>
+            {currentUser ? (
+              <>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {currentUser.email}
+                </div>
+                <Btn small variant="outline" onClick={handleLogout}>Sign Out</Btn>
+              </>
+            ) : (
+              <>
+                <Btn small variant="outline" onClick={() => setPage("login")}>Sign In</Btn>
+                <Btn small onClick={() => setPage("signup")}>Sign Up</Btn>
+              </>
+            )}
           </div>
         </div>
       </div>
