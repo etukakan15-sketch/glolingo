@@ -570,7 +570,7 @@ const Meeting = () => {
 };
 
 // ─── SIGN UP ─────────────────────────────────────────────────────────────────
-const SignUp = ({ setPage }) => {
+const SignUp = ({ setPage, showToast }) => {
   const { signUp } = useAuth();
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
@@ -653,6 +653,7 @@ const SignUp = ({ setPage }) => {
         adFree,
         paymentMethod: accountType !== "free" ? payMethod : null,
       });
+      if (showToast) showToast("Thanks for joining GloLingo! Your account has been created successfully.");
       setSubmitted(true);
     } catch (err) {
       setAuthError(authErrorMessage(err.code));
@@ -666,12 +667,49 @@ const SignUp = ({ setPage }) => {
   ) : null;
 
   if (submitted) return (
-    <div style={{ padding: 40, textAlign: "center", maxWidth: 500, margin: "0 auto" }}>
-      <div style={{ fontSize: 64, marginBottom: 16 }}>✦</div>
-      <h2 style={{ color: COLORS.primary, marginBottom: 12 }}>You're in!</h2>
-      <p style={{ color: COLORS.text, marginBottom: 8 }}>Check your email to verify your account.</p>
-      <p style={{ color: COLORS.textMuted, fontSize: 14, marginBottom: 24 }}>Auto-download link for mobile app sent.</p>
-      <Btn onClick={() => setPage("home")}>Go to GloLingo →</Btn>
+    <div style={{ padding: "50px 24px", textAlign: "center", maxWidth: 520, margin: "0 auto" }}>
+      <div style={{
+        width: 88, height: 88, borderRadius: "50%",
+        background: `${COLORS.primary}18`, border: `2px solid ${COLORS.primary}55`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        margin: "0 auto 28px", fontSize: 42, color: COLORS.primary,
+      }}>✓</div>
+
+      <div style={{ fontSize: 12, letterSpacing: 3, color: COLORS.primary, marginBottom: 10, textTransform: "uppercase" }}>Welcome aboard</div>
+      <h2 style={{ color: COLORS.text, margin: "0 0 12px", fontSize: 28, fontWeight: 900 }}>
+        Thanks for joining GloLingo!
+      </h2>
+      <p style={{ color: COLORS.textMuted, fontSize: 16, marginBottom: 32 }}>
+        Your account has been created successfully.
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 36, textAlign: "left" }}>
+        <Card style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+          <div style={{ fontSize: 22, color: COLORS.primary, flexShrink: 0, marginTop: 2 }}>✉</div>
+          <div>
+            <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 4 }}>Verify your email</div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted }}>We've sent a verification link to your inbox. Check your email to activate full access.</div>
+          </div>
+        </Card>
+        <Card style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+          <div style={{ fontSize: 22, color: COLORS.accent, flexShrink: 0, marginTop: 2 }}>✦</div>
+          <div>
+            <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 4 }}>Your free trial is active</div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted }}>Real-time translation across 50+ languages is ready to use — starting right now.</div>
+          </div>
+        </Card>
+        <Card style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+          <div style={{ fontSize: 22, color: COLORS.gold, flexShrink: 0, marginTop: 2 }}>◉</div>
+          <div>
+            <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 4 }}>Explore GloLingo</div>
+            <div style={{ fontSize: 13, color: COLORS.textMuted }}>Try Live TV, Music, Meetings, and the Smart Remote — all translation features await you.</div>
+          </div>
+        </Card>
+      </div>
+
+      <Btn onClick={() => setPage("home")} style={{ padding: "14px 40px", fontSize: 16 }}>
+        Start Translating →
+      </Btn>
     </div>
   );
 
@@ -840,6 +878,27 @@ const SignUp = ({ setPage }) => {
           </div>
         </Card>
       )}
+    </div>
+  );
+};
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+const Toast = ({ message, onClose }) => {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const hide = setTimeout(() => setVisible(false), 3500);
+    const remove = setTimeout(onClose, 3900);
+    return () => { clearTimeout(hide); clearTimeout(remove); };
+  }, []);
+  return (
+    <div style={{
+      position: "fixed", top: 76, left: "50%", transform: "translateX(-50%)",
+      background: COLORS.primary, color: "#000", padding: "13px 28px",
+      borderRadius: 12, fontWeight: 700, fontSize: 15, zIndex: 9999,
+      boxShadow: "0 4px 24px rgba(0,200,150,0.4)", whiteSpace: "nowrap",
+      opacity: visible ? 1 : 0, transition: "opacity 0.4s ease", pointerEvents: "none",
+    }}>
+      ✓ {message}
     </div>
   );
 };
@@ -1388,6 +1447,9 @@ const OwnerPortal = () => {
 export default function GloLingo() {
   const { currentUser, logout } = useAuth();
   const [page, setPage] = useState("home");
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg) => setToast(msg);
 
   const handleLogout = async () => {
     await logout();
@@ -1403,7 +1465,7 @@ export default function GloLingo() {
     meeting: <Meeting />,
     cast: <CastTV />,
     advertiser: <Advertiser />,
-    signup: <SignUp setPage={setPage} />,
+    signup: <SignUp setPage={setPage} showToast={showToast} />,
     login: <Login setPage={setPage} />,
     admin: <AdminDashboard setPage={setPage} />,
     owner: <OwnerPortal />,
@@ -1456,6 +1518,9 @@ export default function GloLingo() {
       <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: "20px 24px", textAlign: "center", color: COLORS.textMuted, fontSize: 13, marginTop: 20 }}>
         GloLingo © 2025 · <span style={{ color: COLORS.primary, cursor: "pointer" }} onClick={() => setPage("owner")}>Owner Portal</span> · <span style={{ color: COLORS.textMuted, cursor: "pointer" }} onClick={() => setPage("admin")}>Admin</span> · <span style={{ cursor: "pointer", color: COLORS.textMuted }} onClick={() => setPage("advertiser")}>Advertiser Login</span>
       </div>
+
+      {/* Global toast */}
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
   );
 }
