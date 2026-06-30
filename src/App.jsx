@@ -639,6 +639,7 @@ const SignUp = ({ setPage, showToast }) => {
   };
 
   const handleSubmit = async () => {
+    console.log("HANDLE SUBMIT CALLED - accountType is:", accountType);
     // Stripe payment for paid plans
   if (accountType === "premium" || accountType === "elite") {
     try {
