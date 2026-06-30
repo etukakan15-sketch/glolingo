@@ -8,7 +8,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+<<<<<<< HEAD
     "@stripe/stripe-js": "^9.8.0",
+=======
+>>>>>>> 70c21ef4a039635f4e92aea365edd83dff7ae3f3
     "firebase": "^12.15.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
