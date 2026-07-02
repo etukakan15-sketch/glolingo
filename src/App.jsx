@@ -643,6 +643,14 @@ const SignUp = ({ setPage, showToast }) => {
     // Stripe payment for paid plans
   if (accountType === "premium" || accountType === "elite") {
     try {
+      // Stash the signup details so /success can finish creating the
+      // account once we come back from Stripe with a verified payment.
+      localStorage.setItem("glolingo_pending_signup", JSON.stringify({
+        email, password: pass, useCase, languages: langs,
+        isCompany, companyName, tvBrand: tv, streamingDevices: streaming,
+        adFree, paymentMethod: payMethod,
+      }));
+
       const response = await fetch("/api/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -914,6 +922,162 @@ const SignUp = ({ setPage, showToast }) => {
           </div>
         </Card>
       )}
+    </div>
+  );
+};
+
+// ─── SUCCESS (post-Stripe-checkout) ──────────────────────────────────────────
+const SuccessPage = ({ setPage, showToast }) => {
+  const { signUp } = useAuth();
+  const [status, setStatus] = useState("verifying"); // verifying | needs-password | creating | done | error
+  const [plan, setPlan] = useState(null);
+  const [email, setEmail] = useState(null);
+  const [password, setPassword] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    const run = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const sessionId = params.get("session_id");
+
+      if (!sessionId) {
+        setStatus("error");
+        setErrorMsg("Missing checkout session. If you just paid, please check your email or contact support.");
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/verify-session?session_id=${encodeURIComponent(sessionId)}`);
+        const data = await res.json();
+
+        if (data.error || !data.verified) {
+          setStatus("error");
+          setErrorMsg(data.error || "We couldn't verify your payment. Please contact support.");
+          return;
+        }
+
+        setPlan(data.plan);
+        setEmail(data.email);
+
+        // Look for the signup details we stashed before redirecting to Stripe.
+        let pending = null;
+        try {
+          const raw = localStorage.getItem("glolingo_pending_signup");
+          if (raw) pending = JSON.parse(raw);
+        } catch { /* ignore corrupt data */ }
+
+        const matchesEmail = pending?.email && data.email &&
+          pending.email.toLowerCase() === data.email.toLowerCase();
+
+        if (pending && matchesEmail && pending.password) {
+          setStatus("creating");
+          await signUp(data.email, pending.password, {
+            plan: data.plan,
+            useCase: pending.useCase,
+            languages: pending.languages,
+            isCompany: pending.isCompany,
+            companyName: pending.companyName,
+            tvBrand: pending.tvBrand,
+            streamingDevices: pending.streamingDevices,
+            adFree: pending.adFree,
+            paymentMethod: pending.paymentMethod,
+          });
+          localStorage.removeItem("glolingo_pending_signup");
+          setStatus("done");
+          if (showToast) showToast("Payment successful! Your GloLingo account is ready.");
+        } else {
+          // Payment verified, but we don't have the password from this
+          // browser (different device, cleared storage, etc.) — ask for one.
+          setStatus("needs-password");
+        }
+      } catch (err) {
+        setStatus("error");
+        setErrorMsg("Something went wrong verifying your payment. Please contact support.");
+      }
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleFinishSetup = async () => {
+    if (!password || password.length < 8) {
+      setErrorMsg("Password must be at least 8 characters.");
+      return;
+    }
+    setStatus("creating");
+    setErrorMsg("");
+    try {
+      await signUp(email, password, { plan });
+      localStorage.removeItem("glolingo_pending_signup");
+      setStatus("done");
+      if (showToast) showToast("Payment successful! Your GloLingo account is ready.");
+    } catch (err) {
+      setStatus("needs-password");
+      setErrorMsg(
+        err.code === "auth/email-already-in-use"
+          ? "An account with this email already exists. Please sign in instead."
+          : "Couldn't create your account. Please try again."
+      );
+    }
+  };
+
+  if (status === "verifying" || status === "creating") {
+    return (
+      <div style={{ padding: "80px 24px", textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ fontSize: 15, color: COLORS.textMuted }}>
+          {status === "verifying" ? "Confirming your payment…" : "Setting up your account…"}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div style={{ padding: "60px 24px", textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ color: COLORS.red, marginBottom: 16, fontSize: 15 }}>{errorMsg}</div>
+        <Btn onClick={() => setPage("signup")}>Back to Sign Up</Btn>
+      </div>
+    );
+  }
+
+  if (status === "needs-password") {
+    return (
+      <div style={{ padding: 24, maxWidth: 480, margin: "0 auto" }}>
+        <Card>
+          <h3 style={{ color: COLORS.text, marginTop: 0 }}>Payment confirmed — finish setup</h3>
+          <p style={{ color: COLORS.textMuted, fontSize: 14 }}>
+            Your {plan} subscription is active for <strong>{email}</strong>. Set a password to finish creating your account.
+          </p>
+          <div style={{ marginBottom: 12 }}>
+            <Input type="password" placeholder="Choose a password (min 8 characters)" value={password}
+              onChange={e => setPassword(e.target.value)} />
+          </div>
+          {errorMsg && <div style={{ color: COLORS.red, fontSize: 12, marginBottom: 12 }}>{errorMsg}</div>}
+          <Btn onClick={handleFinishSetup}>Finish Setup →</Btn>
+        </Card>
+      </div>
+    );
+  }
+
+  // done
+  return (
+    <div style={{ padding: "50px 24px", textAlign: "center", maxWidth: 520, margin: "0 auto" }}>
+      <div style={{
+        width: 88, height: 88, borderRadius: "50%",
+        background: `${COLORS.primary}18`, border: `2px solid ${COLORS.primary}55`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        margin: "0 auto 28px", fontSize: 42, color: COLORS.primary,
+      }}>✓</div>
+      <div style={{ fontSize: 12, letterSpacing: 3, color: COLORS.primary, marginBottom: 10, textTransform: "uppercase" }}>Welcome aboard</div>
+      <h2 style={{ color: COLORS.text, margin: "0 0 12px", fontSize: 28, fontWeight: 900 }}>
+        You're all set on {plan === "elite" ? "Elite" : "Premium"}!
+      </h2>
+      <p style={{ color: COLORS.textMuted, fontSize: 16, marginBottom: 32 }}>
+        Your account has been created and your subscription is active.
+      </p>
+      <Btn onClick={() => setPage("home")} style={{ padding: "14px 40px", fontSize: 16 }}>
+        Start Translating →
+      </Btn>
     </div>
   );
 };
@@ -1482,7 +1646,9 @@ const OwnerPortal = () => {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function GloLingo() {
   const { currentUser, logout } = useAuth();
-  const [page, setPage] = useState("home");
+  const [page, setPage] = useState(
+    window.location.pathname === "/success" ? "success" : "home"
+  );
   const [toast, setToast] = useState(null);
 
   const showToast = (msg) => setToast(msg);
@@ -1502,6 +1668,7 @@ export default function GloLingo() {
     cast: <CastTV />,
     advertiser: <Advertiser />,
     signup: <SignUp setPage={setPage} showToast={showToast} />,
+    success: <SuccessPage setPage={setPage} showToast={showToast} />,
     login: <Login setPage={setPage} />,
     admin: <AdminDashboard setPage={setPage} />,
     owner: <OwnerPortal />,
