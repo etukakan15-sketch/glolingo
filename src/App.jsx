@@ -651,6 +651,12 @@ const SignUp = ({ setPage, showToast }) => {
           email: email,
         }),
       });
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        console.error("Checkout endpoint returned non-JSON (likely 404/HTML fallback). Status:", response.status);
+        setAuthError("Payment setup isn't available right now. Please try again shortly.");
+        return;
+      }
       const data = await response.json();
       if (data.error) {
         setAuthError(data.error);
@@ -660,7 +666,11 @@ const SignUp = ({ setPage, showToast }) => {
         window.location.href = data.url;
         return;
       }
+      console.error("Checkout endpoint returned no url and no error:", data);
+      setAuthError("Payment setup failed. Please try again.");
+      return;
     } catch (err) {
+      console.error("Checkout request failed:", err);
       setAuthError("Payment failed. Please try again.");
       return;
     }
@@ -994,9 +1004,7 @@ const Login = ({ setPage }) => {
             {error}
           </div>
         )}
-        <Btn onClick={
-          
-        } style={{ width: "100%", justifyContent: "center", opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto" }}>
+        <Btn onClick={handleSubmit} style={{ width: "100%", justifyContent: "center", opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto" }}>
           {loading ? "Signing in…" : "Sign In →"}
         </Btn>
         <div style={{ marginTop: 14, fontSize: 13, color: COLORS.textMuted, textAlign: "center" }}>
