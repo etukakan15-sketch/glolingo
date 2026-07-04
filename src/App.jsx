@@ -334,7 +334,7 @@ const MediaHub = ({ setPage }) => {
             <div style={{ fontSize: 36, marginBottom: 10, color: s.color }}>{s.icon}</div>
             <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 4 }}>{s.label}</div>
             <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 14 }}>{s.desc}</div>
-            <Btn onClick={() => setPage(s.id)} small variant="outline">Open →</Btn>
+            <Btn small variant="outline">Open →</Btn>
           </Card>
         ))}
       </div>
