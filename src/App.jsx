@@ -475,17 +475,57 @@ const LiveTV = ({ setPage }) => {
 // ─── MUSIC ────────────────────────────────────────────────────────────────────
 const Music = () => {
   const [playing, setPlaying] = useState(false);
-  const [lang, setLang] = useState("Nigerian Pidgin");
+  const [lang, setLang] = useState("Yoruba");
   const [karaoke, setKaraoke] = useState(true);
   const [progress, setProgress] = useState(38);
   const tracks = [
-    { title: "Essence", artist: "Wizkid ft. Tems", duration: "3:47" },
-    { title: "Last Last", artist: "Burna Boy", duration: "3:21" },
-    { title: "Calm Down", artist: "Rema", duration: "3:33" },
-    { title: "Favorite Song", artist: "Tobi Lou", duration: "2:59" },
-    { title: "Hold On", artist: "Justin Bieber", duration: "3:02" },
+    { title: "Essence", artist: "Wizkid ft. Tems", duration: "3:47", lyric: "Dancing through the night, feeling so alive" },
+    { title: "Last Last", artist: "Burna Boy", duration: "3:21", lyric: "I promised myself I would be more careful this year" },
+    { title: "Calm Down", artist: "Rema", duration: "3:33", lyric: "Just relax, everything is going to be fine" },
+    { title: "Favorite Song", artist: "Tobi Lou", duration: "2:59", lyric: "You are my favorite song on repeat" },
+    { title: "Hold On", artist: "Justin Bieber", duration: "3:02", lyric: "Hold on, better days are on their way" },
   ];
   const [track, setTrack] = useState(0);
+
+  const [translatedLyric, setTranslatedLyric] = useState("");
+  const [lyricEngine, setLyricEngine] = useState(null);
+  const [lyricTranslating, setLyricTranslating] = useState(false);
+  const [lyricError, setLyricError] = useState("");
+
+  useEffect(() => {
+    if (!karaoke) return;
+    let cancelled = false;
+    (async () => {
+      setLyricTranslating(true);
+      setLyricError("");
+      try {
+        const res = await fetch("/api/translate-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: tracks[track].lyric, targetLanguage: lang }),
+        });
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error("Translation service is unavailable right now.");
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.error) {
+          setLyricError(data.error);
+          setTranslatedLyric("");
+        } else {
+          setTranslatedLyric(data.translatedText);
+          setLyricEngine(data.engine);
+        }
+      } catch (err) {
+        if (!cancelled) setLyricError(err.message || "Something went wrong.");
+      } finally {
+        if (!cancelled) setLyricTranslating(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [track, lang, karaoke]);
+
   return (
     <div style={{ padding: 24 }}>
       <h2 style={{ color: COLORS.text, marginBottom: 6 }}>Music</h2>
@@ -511,8 +551,12 @@ const Music = () => {
             {karaoke && (
               <div style={{ background: "#0d1525", borderRadius: 10, padding: 16, marginBottom: 16, textAlign: "center" }}>
                 <div style={{ color: COLORS.primary, fontWeight: 700, fontSize: 16 }}>♫ Karaoke Mode Active</div>
-                <div style={{ color: COLORS.text, fontSize: 14, marginTop: 6 }}>[Translated lyrics appear here in sync]</div>
-                <div style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 4 }}>— in {lang} —</div>
+                <div style={{ color: COLORS.text, fontSize: 14, marginTop: 6 }}>
+                  {lyricTranslating ? "Translating…" : lyricError ? lyricError : translatedLyric || "[Translated lyrics appear here in sync]"}
+                </div>
+                <div style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 4 }}>
+                  — in {lang}{lyricEngine ? ` · via ${lyricEngine === "deepl" ? "DeepL" : "Google Translate"}` : ""} —
+                </div>
               </div>
             )}
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
