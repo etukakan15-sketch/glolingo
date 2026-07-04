@@ -370,6 +370,74 @@ const TranslateTextPanel = () => {
   );
 };
 
+const SocialMediaPlayer = () => {
+  const [link, setLink] = useState("");
+  const [targetLanguage, setTargetLanguage] = useState("Spanish");
+  const [translatedCaption, setTranslatedCaption] = useState("");
+  const [engine, setEngine] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handlePlayTranslate = async () => {
+    if (!link.trim()) return;
+    setLoading(true);
+    setError("");
+    setTranslatedCaption("");
+    try {
+      const res = await fetch("/api/translate-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: link, targetLanguage }),
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Translation service is unavailable right now.");
+      }
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setTranslatedCaption(data.translatedText);
+        setEngine(data.engine);
+      }
+    } catch (err) {
+      setError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card>
+      <h3 style={{ color: COLORS.text, marginTop: 0 }}>Social Media Player</h3>
+      <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+        Paste a link and caption text below. (Automatic audio/caption extraction from the link itself is coming next — for now this translates the text you paste.)
+      </p>
+      <Input placeholder="Paste TikTok, YouTube, Instagram, or Facebook link or caption..." value={link} onChange={e => setLink(e.target.value)} style={{ marginBottom: 12 }} />
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <Select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value)}
+            options={LANGUAGES.map(l => ({ value: l, label: l }))} />
+        </div>
+        <Btn onClick={handlePlayTranslate} style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto" }}>
+          {loading ? "Translating…" : "▶ Play & Translate"}
+        </Btn>
+        <Btn small variant="outline">⬡ Cast to TV</Btn>
+      </div>
+      {error && (
+        <div style={{ color: COLORS.red, fontSize: 13, marginBottom: 12 }}>{error}</div>
+      )}
+      {translatedCaption && (
+        <div style={{ background: COLORS.darker, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 16, color: COLORS.text, fontSize: 15 }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
+            {targetLanguage} · via {engine === "deepl" ? "DeepL" : "Google Translate"}
+          </div>
+          {translatedCaption}
+        </div>
+      )}
+    </Card>
+  );
+};
 const MediaHub = ({ setPage }) => {
   const [activeSource, setActiveSource] = useState(null);
   const sources = [
@@ -393,16 +461,7 @@ const MediaHub = ({ setPage }) => {
           </Card>
         ))}
       </div>
-      {activeSource === "social" && (
-        <Card>
-          <h3 style={{ color: COLORS.text, marginTop: 0 }}>Social Media Player</h3>
-          <Input placeholder="Paste TikTok, YouTube, Instagram, or Facebook link..." style={{ marginBottom: 12 }} />
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Btn small>▶ Play & Translate</Btn>
-            <Btn small variant="outline">⬡ Cast to TV</Btn>
-          </div>
-        </Card>
-      )}
+      {activeSource === "social" && <SocialMediaPlayer />}
       {activeSource === "upload" && <TranslateTextPanel />}
     </div>
   );
