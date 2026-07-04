@@ -18,7 +18,42 @@ const COLORS = {
   purple: "#8B5CF6",
 };
 
-const LANGUAGES = ["English","Yoruba","Igbo","Nigerian Pidgin","Ibibio","Kiswahili","Jamaican Patois","Spanish","French","Mandarin","Arabic","Portuguese","German","Japanese","Korean","Hindi","Swahili","Hausa","Amharic","Zulu","Afrikaans","Turkish","Russian","Italian","Dutch","Polish","Bengali","Vietnamese","Thai","Tagalog"];
+// Languages with real translation support: DeepL handles the first group,
+// Google Cloud Translation handles the second (see functions/api/translate-text.js).
+// Nigerian Pidgin, Ibibio, and Jamaican Patois are not yet supported by any
+// commercial translation engine's API, so they're excluded here for now.
+const LANGUAGES = ["English","Spanish","French","Mandarin","Arabic","Portuguese","German","Japanese","Korean","Turkish","Russian","Italian","Dutch","Polish","Vietnamese","Hindi","Bengali","Thai","Tagalog","Yoruba","Igbo","Kiswahili","Hausa","Amharic","Zulu","Afrikaans"];
+
+// Maps each displayed language name to the engine + language code used to
+// actually call the translation API. Keep in sync with functions/api/translate-text.js.
+const LANGUAGE_ENGINES = {
+  English: { engine: "deepl", code: "EN" },
+  Spanish: { engine: "deepl", code: "ES" },
+  French: { engine: "deepl", code: "FR" },
+  Mandarin: { engine: "deepl", code: "ZH" },
+  Arabic: { engine: "deepl", code: "AR" },
+  Portuguese: { engine: "deepl", code: "PT-PT" },
+  German: { engine: "deepl", code: "DE" },
+  Japanese: { engine: "deepl", code: "JA" },
+  Korean: { engine: "deepl", code: "KO" },
+  Turkish: { engine: "deepl", code: "TR" },
+  Russian: { engine: "deepl", code: "RU" },
+  Italian: { engine: "deepl", code: "IT" },
+  Dutch: { engine: "deepl", code: "NL" },
+  Polish: { engine: "deepl", code: "PL" },
+  Vietnamese: { engine: "deepl", code: "VI" },
+  Hindi: { engine: "google", code: "hi" },
+  Bengali: { engine: "google", code: "bn" },
+  Thai: { engine: "google", code: "th" },
+  Tagalog: { engine: "google", code: "tl" },
+  Yoruba: { engine: "google", code: "yo" },
+  Igbo: { engine: "google", code: "ig" },
+  Kiswahili: { engine: "google", code: "sw" },
+  Hausa: { engine: "google", code: "ha" },
+  Amharic: { engine: "google", code: "am" },
+  Zulu: { engine: "google", code: "zu" },
+  Afrikaans: { engine: "google", code: "af" },
+};
 
 const NAV_ITEMS = [
   { id: "home", label: "Home", icon: "⌂" },
@@ -198,6 +233,88 @@ const HomePage = ({ setPage }) => (
 );
 
 // ─── MEDIA HUB ────────────────────────────────────────────────────────────────
+// ─── TRANSLATE TEXT PANEL (real DeepL / Google Translate pipeline) ───────────
+const TranslateTextPanel = () => {
+  const [text, setText] = useState("");
+  const [targetLanguage, setTargetLanguage] = useState("Spanish");
+  const [translatedText, setTranslatedText] = useState("");
+  const [engine, setEngine] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleTranslate = async () => {
+    if (!text.trim()) return;
+    setLoading(true);
+    setError("");
+    setTranslatedText("");
+    try {
+      const res = await fetch("/api/translate-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, targetLanguage }),
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Translation service is unavailable right now.");
+      }
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setTranslatedText(data.translatedText);
+        setEngine(data.engine);
+      }
+    } catch (err) {
+      setError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card>
+      <h3 style={{ color: COLORS.text, marginTop: 0 }}>Translate Text</h3>
+      <p style={{ color: COLORS.textMuted, fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+        Real-time translation, live — powered by DeepL and Google Translate. (Audio/video upload with captions is coming next.)
+      </p>
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder="Type or paste text to translate..."
+        rows={4}
+        style={{
+          width: "100%", padding: 12, borderRadius: 8, border: `1px solid ${COLORS.border}`,
+          background: COLORS.darker, color: COLORS.text, fontSize: 14, marginBottom: 12,
+          fontFamily: "inherit", resize: "vertical",
+        }}
+      />
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <Select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value)}
+            options={LANGUAGES.map(l => ({ value: l, label: l }))} />
+        </div>
+        <Btn onClick={handleTranslate} style={{ opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto" }}>
+          {loading ? "Translating…" : "Translate →"}
+        </Btn>
+      </div>
+      {error && (
+        <div style={{ color: COLORS.red, fontSize: 13, marginBottom: 12 }}>{error}</div>
+      )}
+      {translatedText && (
+        <div style={{
+          background: COLORS.darker, border: `1px solid ${COLORS.border}`, borderRadius: 8,
+          padding: 16, color: COLORS.text, fontSize: 15,
+        }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
+            {targetLanguage} · via {engine === "deepl" ? "DeepL" : "Google Translate"}
+          </div>
+          {translatedText}
+        </div>
+      )}
+    </Card>
+  );
+};
+
 const MediaHub = ({ setPage }) => {
   const [activeSource, setActiveSource] = useState(null);
   const sources = [
@@ -231,17 +348,7 @@ const MediaHub = ({ setPage }) => {
           </div>
         </Card>
       )}
-      {activeSource === "upload" && (
-        <Card>
-          <h3 style={{ color: COLORS.text, marginTop: 0 }}>Upload Local Media</h3>
-          <div style={{ border: `2px dashed ${COLORS.border}`, borderRadius: 10, padding: 40, textAlign: "center", color: COLORS.textMuted, marginBottom: 16 }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>⬆</div>
-            <div>Drop MP4, MP3, or AVI files here</div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>or click to browse</div>
-          </div>
-          <Btn small>Upload & Translate</Btn>
-        </Card>
-      )}
+      {activeSource === "upload" && <TranslateTextPanel />}
     </div>
   );
 };
