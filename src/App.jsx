@@ -122,6 +122,59 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
   };
   const ch = channels[channel] || channels["CNN"];
 
+  const [translated, setTranslated] = useState("");
+  const [translatedSecond, setTranslatedSecond] = useState("");
+  const [engine, setEngine] = useState(null);
+  const [translating, setTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState("");
+
+  useEffect(() => {
+    if (!isOn || !showSubtitle) return;
+    let cancelled = false;
+
+    const translateOne = async (targetLanguage) => {
+      const res = await fetch("/api/translate-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: ch.content, targetLanguage }),
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Translation service is unavailable right now.");
+      }
+      return res.json();
+    };
+
+    (async () => {
+      setTranslating(true);
+      setTranslateError("");
+      try {
+        const primary = await translateOne(subtitleLang);
+        if (cancelled) return;
+        if (primary.error) {
+          setTranslateError(primary.error);
+          setTranslated("");
+        } else {
+          setTranslated(primary.translatedText);
+          setEngine(primary.engine);
+        }
+
+        if (secondLang) {
+          const second = await translateOne(secondLang);
+          if (!cancelled && !second.error) setTranslatedSecond(second.translatedText);
+        } else {
+          setTranslatedSecond("");
+        }
+      } catch (err) {
+        if (!cancelled) setTranslateError(err.message || "Something went wrong.");
+      } finally {
+        if (!cancelled) setTranslating(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [channel, subtitleLang, secondLang, isOn, showSubtitle]);
+
   return (
     <div style={{ background: "#111", borderRadius: 16, overflow: "hidden", position: "relative", aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid #222" }}>
       {isOn ? (
@@ -139,17 +192,19 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
           </div>
           {showSubtitle && (
             <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center" }}>
-              <div style={{ background: "rgba(0,0,0,0.85)", display: "inline-block", padding: "6px 18px", borderRadius: 6, fontSize: 15, color: "#fff", marginBottom: 4 }}>
-                [GloLingo AI] — Translation active in {subtitleLang}
+              <div style={{ background: "rgba(0,0,0,0.85)", display: "inline-block", padding: "6px 18px", borderRadius: 6, fontSize: 15, color: "#fff", marginBottom: 4, maxWidth: "90%" }}>
+                {translating ? "[GloLingo AI] — Translating…" : translateError ? `[GloLingo AI] — ${translateError}` : translated ? translated : "[GloLingo AI] — Translation active"}
               </div>
-              {secondLang && (
+              {secondLang && translatedSecond && (
                 <div style={{ background: "rgba(0,200,150,0.15)", display: "inline-block", padding: "4px 14px", borderRadius: 6, fontSize: 13, color: COLORS.primary }}>
-                  Dual: {secondLang}
+                  {secondLang}: {translatedSecond}
                 </div>
               )}
             </div>
           )}
-          <div style={{ position: "absolute", bottom: 8, right: 12, color: COLORS.textMuted, fontSize: 11 }}>GloLingo AI Active</div>
+          <div style={{ position: "absolute", bottom: 8, right: 12, color: COLORS.textMuted, fontSize: 11 }}>
+            {engine ? `GloLingo AI Active · ${engine === "deepl" ? "DeepL" : "Google Translate"}` : "GloLingo AI Active"}
+          </div>
         </div>
       ) : (
         <div style={{ color: COLORS.textMuted, fontSize: 16, textAlign: "center" }}>
