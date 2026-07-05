@@ -55,6 +55,53 @@ const LANGUAGE_ENGINES = {
   Afrikaans: { engine: "google", code: "af" },
 };
 
+// Real, officially-run 24/7 YouTube Live channels. Each broadcaster runs
+// its own live channel and intentionally makes it embeddable via YouTube's
+// "live_stream?channel=" pattern — this is NOT a scraped/unofficial feed.
+// Real-time dubbing of the actual broadcast audio isn't possible this way
+// (browsers block cross-origin audio access from iframes), so the subtitle
+// translation below runs on a representative sample line per channel through
+// the real DeepL/Google Cloud pipeline — a stand-in for what a licensed
+// closed-caption or audio feed would provide once a broadcaster partnership
+// is in place.
+const TV_CHANNELS = [
+  { name: "DW News", youtubeChannelId: "UCknLrEdhRCp1aegoMqRaCZg", bg: "#003087", content: "Breaking News: World Leaders Gather for AI Summit", lang: "English" },
+  { name: "France 24", youtubeChannelId: "UCQfwfsi5VrQ8yKZ-UWmAEFg", bg: "#f00000", content: "Actualités mondiales — nouvelles du jour", lang: "French" },
+  { name: "Al Jazeera English", youtubeChannelId: "UCNye-wNBqNL5ZzHSJj3l8Bg", bg: "#009639", content: "أخبار الشرق الأوسط والعالم", lang: "Arabic" },
+  { name: "Euronews", youtubeChannelId: "UCSrZ3UV4jOidv8ppoVuvW9Q", bg: "#0033A0", content: "Top stories from across Europe this hour", lang: "English" },
+  { name: "NHK World Japan", youtubeChannelId: "UCSPEjw8F2nQDtmUKPFNF7_A", bg: "#BC002D", content: "日本とアジアの最新ニュース", lang: "Japanese" },
+  { name: "Africanews", youtubeChannelId: "UC1_E8NeF5QHY2dtdLRBCCLA", bg: "#F7A800", content: "The latest headlines from across the African continent", lang: "English" },
+  { name: "Bloomberg Originals", youtubeChannelId: "UCUMZ7gohGI9HcU9VNsr2FJQ", bg: "#000000", content: "Markets update: today's biggest business stories", lang: "English" },
+  { name: "TRT World", youtubeChannelId: "UC7fWeaHhqgM4Ry-RMpM2YYw", bg: "#C8102E", content: "Global affairs and analysis from Istanbul", lang: "English" },
+  { name: "Channels TV Nigeria", youtubeChannelId: "UCEXGDNclvmg6RW0vipJYsTQ", bg: "#008751", content: "Naija News: Lagos State Governor Speaks on Economy", lang: "English" },
+];
+
+// ─── USER-ADDED CUSTOM CHANNELS (localStorage-backed) ─────────────────────────
+// Users can add their own YouTube-live channel of choice. We verify what we
+// honestly can via /api/verify-channel (which uses the YouTube Data API to
+// check the embeddable flag when the channel happens to be live at check
+// time) and otherwise say plainly that we can't pre-confirm it. Either way,
+// the user must accept a liability toggle before the channel is saved.
+const CUSTOM_CHANNELS_KEY = "glolingo_custom_channels";
+
+const loadCustomChannels = () => {
+  try {
+    const raw = localStorage.getItem(CUSTOM_CHANNELS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveCustomChannels = (list) => {
+  try {
+    localStorage.setItem(CUSTOM_CHANNELS_KEY, JSON.stringify(list));
+  } catch {
+    // localStorage unavailable (private browsing, etc.) — silently no-op;
+    // the channel will still work for this session via React state.
+  }
+};
+
 const NAV_ITEMS = [
   { id: "home", label: "Home", icon: "⌂" },
   { id: "mediahub", label: "Media Hub", icon: "▶" },
@@ -109,18 +156,8 @@ const Select = ({ value, onChange, options, style = {} }) => (
 );
 
 // ─── TV SCREEN ────────────────────────────────────────────────────────────────
-const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitle }) => {
-  const [time, setTime] = useState(new Date());
-  useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
-
-  const channels = {
-    "CNN": { bg: "#cc0000", content: "Breaking News: World Leaders Gather for AI Summit", lang: "English" },
-    "BBC": { bg: "#003087", content: "Technology Review: The Future of Translation Tech", lang: "English" },
-    "France 24": { bg: "#f00000", content: "Actualités mondiales — nouvelles du jour", lang: "French" },
-    "Al Jazeera": { bg: "#009639", content: "أخبار الشرق الأوسط والعالم", lang: "Arabic" },
-    "NTA Nigeria": { bg: "#008751", content: "Naija News: Lagos State Governor Speaks on Economy", lang: "Nigerian Pidgin" },
-  };
-  const ch = channels[channel] || channels["CNN"];
+const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitle, channelsList = TV_CHANNELS }) => {
+  const ch = channelsList.find(c => c.name === channel) || channelsList[0] || TV_CHANNELS[0];
 
   const [translated, setTranslated] = useState("");
   const [translatedSecond, setTranslatedSecond] = useState("");
@@ -178,20 +215,22 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
   return (
     <div style={{ background: "#111", borderRadius: 16, overflow: "hidden", position: "relative", aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid #222" }}>
       {isOn ? (
-        <div style={{ width: "100%", height: "100%", background: `linear-gradient(135deg, ${ch.bg}dd 0%, #000 100%)`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}>
-          <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: 10, alignItems: "center" }}>
+        <div style={{ width: "100%", height: "100%", background: "#000", position: "relative" }}>
+          <iframe
+            key={ch.youtubeChannelId}
+            src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&mute=${volume === 0 ? 1 : 0}`}
+            title={`${channel} live`}
+            style={{ width: "100%", height: "100%", border: "none" }}
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+          <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: 10, alignItems: "center", pointerEvents: "none" }}>
             <span style={{ background: ch.bg, color: "#fff", fontSize: 13, fontWeight: 800, padding: "3px 10px", borderRadius: 4 }}>{channel}</span>
             <Tag color={COLORS.primary}>● LIVE</Tag>
-          </div>
-          <div style={{ position: "absolute", top: 12, right: 12, color: COLORS.textMuted, fontSize: 13 }}>
-            {time.toLocaleTimeString()} | Vol: {volume}
-          </div>
-          <div style={{ textAlign: "center", padding: "0 20px" }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 8, textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>{ch.content}</div>
             <Tag color={COLORS.gold}>{ch.lang} → {subtitleLang}</Tag>
           </div>
           {showSubtitle && (
-            <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center" }}>
+            <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
               <div style={{ background: "rgba(0,0,0,0.85)", display: "inline-block", padding: "6px 18px", borderRadius: 6, fontSize: 15, color: "#fff", marginBottom: 4, maxWidth: "90%" }}>
                 {translating ? "[GloLingo AI] — Translating…" : translateError ? `[GloLingo AI] — ${translateError}` : translated ? translated : "[GloLingo AI] — Translation active"}
               </div>
@@ -200,11 +239,11 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
                   {secondLang}: {translatedSecond}
                 </div>
               )}
+              <div style={{ color: COLORS.textMuted, fontSize: 11, marginTop: 4 }}>
+                {engine ? `GloLingo AI Active · ${engine === "deepl" ? "DeepL" : "Google Translate"}` : "GloLingo AI Active"}
+              </div>
             </div>
           )}
-          <div style={{ position: "absolute", bottom: 8, right: 12, color: COLORS.textMuted, fontSize: 11 }}>
-            {engine ? `GloLingo AI Active · ${engine === "deepl" ? "DeepL" : "Google Translate"}` : "GloLingo AI Active"}
-          </div>
         </div>
       ) : (
         <div style={{ color: COLORS.textMuted, fontSize: 16, textAlign: "center" }}>
@@ -441,7 +480,7 @@ const SocialMediaPlayer = () => {
 const MediaHub = ({ setPage }) => {
   const [activeSource, setActiveSource] = useState(null);
   const sources = [
-    { id: "livetv", label: "Live TV", icon: "📺", color: COLORS.red, desc: "Global IPTV, CNN, BBC, Al Jazeera, NTA" },
+    { id: "livetv", label: "Live TV", icon: "📺", color: COLORS.red, desc: "DW, France 24, Al Jazeera, Euronews, NHK, Africanews & more" },
     { id: "music", label: "Music", icon: "♪", color: COLORS.blue, desc: "Spotify, Apple Music, SoundCloud, iHeart" },
     { id: "social", label: "Social Media", icon: "◈", color: COLORS.purple, desc: "TikTok, Facebook Reels, Instagram, YouTube" },
     { id: "upload", label: "Upload Media", icon: "⬆", color: COLORS.gold, desc: "MP4, MP3, AVI — your local content" },
@@ -467,15 +506,149 @@ const MediaHub = ({ setPage }) => {
   );
 };
 
+// ─── ADD YOUR OWN CHANNEL ──────────────────────────────────────────────────
+const AddCustomChannel = ({ customChannels, setCustomChannels }) => {
+  const [input, setInput] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState(null);
+  const [checkError, setCheckError] = useState("");
+  const [accepted, setAccepted] = useState(false);
+
+  const handleCheck = async () => {
+    if (!input.trim()) return;
+    setChecking(true);
+    setCheckError("");
+    setResult(null);
+    setAccepted(false);
+    try {
+      const res = await fetch("/api/verify-channel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: input.trim() }),
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Channel verification service is unavailable right now.");
+      }
+      const data = await res.json();
+      if (!data.ok) {
+        setCheckError(data.message || "Couldn't find that channel. Double-check the link and try again.");
+      } else {
+        setResult(data);
+      }
+    } catch (err) {
+      setCheckError(err.message || "Something went wrong checking that channel.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const handleAdd = () => {
+    if (!result || !result.channelId || !accepted) return;
+    const newChannel = {
+      name: result.channelName || result.channelId,
+      youtubeChannelId: result.channelId,
+      bg: COLORS.blue,
+      content: "Live broadcast — translated line unavailable until this channel is live at check time.",
+      lang: "English",
+      custom: true,
+      embeddableHint: result.embeddable,
+    };
+    const updated = [...customChannels.filter(c => c.youtubeChannelId !== newChannel.youtubeChannelId), newChannel];
+    setCustomChannels(updated);
+    saveCustomChannels(updated);
+    setInput("");
+    setResult(null);
+    setAccepted(false);
+  };
+
+  const handleRemove = (id) => {
+    const updated = customChannels.filter(c => c.youtubeChannelId !== id);
+    setCustomChannels(updated);
+    saveCustomChannels(updated);
+  };
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 6 }}>Add Your Own Channel</div>
+      <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 0, marginBottom: 14 }}>
+        Paste a YouTube channel link, @handle, or channel ID. We'll check what we can — we can only
+        confirm whether a channel allows embedding at the moment it's actually live, so results may
+        say "unknown" for channels that aren't live right now.
+      </p>
+      <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Input placeholder="e.g. youtube.com/@channelname or a channel ID" value={input} onChange={e => setInput(e.target.value)} />
+        </div>
+        <Btn small onClick={handleCheck} style={{ opacity: checking ? 0.6 : 1, pointerEvents: checking ? "none" : "auto" }}>
+          {checking ? "Checking…" : "Check Channel"}
+        </Btn>
+      </div>
+
+      {checkError && <div style={{ color: COLORS.red, fontSize: 13, marginBottom: 12 }}>{checkError}</div>}
+
+      {result && (
+        <div style={{ background: "#0d1525", border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <div style={{ fontWeight: 700, color: COLORS.text }}>{result.channelName}</div>
+            {result.embeddable === true && <Tag color={COLORS.primary}>✓ Embedding allowed</Tag>}
+            {result.embeddable === false && <Tag color={COLORS.red}>✗ Embedding disabled</Tag>}
+            {result.embeddable === "unknown" && <Tag color={COLORS.gold}>⚠ Couldn't confirm — preview below</Tag>}
+          </div>
+          {result.message && <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 10 }}>{result.message}</div>}
+
+          <div style={{ borderRadius: 8, overflow: "hidden", aspectRatio: "16/9", background: "#000", marginBottom: 12 }}>
+            <iframe
+              src={`https://www.youtube.com/embed/live_stream?channel=${result.channelId}`}
+              title="Channel preview"
+              style={{ width: "100%", height: "100%", border: "none" }}
+              allow="autoplay; encrypted-media; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
+            <input type="checkbox" id="liability" checked={accepted} onChange={e => setAccepted(e.target.checked)} style={{ marginTop: 3 }} />
+            <label htmlFor="liability" style={{ fontSize: 12.5, color: COLORS.textMuted, cursor: "pointer", lineHeight: 1.5 }}>
+              I understand GloLingo does not control, verify, or take responsibility for the availability,
+              licensing, or content of channels I add myself. Playback depends entirely on that channel's
+              own settings and may stop working at any time without notice. I accept full responsibility
+              for any channel I choose to add.
+            </label>
+          </div>
+
+          <Btn small onClick={handleAdd} style={{ opacity: accepted ? 1 : 0.5, pointerEvents: accepted ? "auto" : "none" }}>
+            + Add to My Channels
+          </Btn>
+        </div>
+      )}
+
+      {customChannels.length > 0 && (
+        <div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>My Added Channels</div>
+          {customChannels.map(c => (
+            <div key={c.youtubeChannelId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${COLORS.border}` }}>
+              <span style={{ fontSize: 14, color: COLORS.text }}>{c.name}</span>
+              <Btn small variant="ghost" onClick={() => handleRemove(c.youtubeChannelId)}>Remove</Btn>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+};
+
 // ─── LIVE TV ─────────────────────────────────────────────────────────────────
 const LiveTV = ({ setPage }) => {
-  const [channel, setChannel] = useState("CNN");
+  const [customChannels, setCustomChannels] = useState(() => loadCustomChannels());
+  const allChannels = [...TV_CHANNELS, ...customChannels];
+  const [channel, setChannel] = useState(TV_CHANNELS[0].name);
   const [volume, setVolume] = useState(50);
   const [isOn, setIsOn] = useState(true);
   const [subtitleLang, setSubtitleLang] = useState("Yoruba");
   const [secondLang, setSecondLang] = useState("");
   const [showSubtitle, setShowSubtitle] = useState(true);
-  const channels = ["CNN","BBC","France 24","Al Jazeera","NTA Nigeria","DW","RT","Sky News","Euronews","CGTN"];
+  const channels = allChannels.map(c => c.name);
   const idx = channels.indexOf(channel);
   return (
     <div style={{ padding: 24 }}>
@@ -483,7 +656,7 @@ const LiveTV = ({ setPage }) => {
       <p style={{ color: COLORS.textMuted, marginBottom: 20 }}>Global channels with real-time AI translation. Full audio replacement active.</p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20 }}>
         <div>
-          <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} />
+          <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} channelsList={allChannels} />
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
             <Btn small onClick={() => { const ni = (idx - 1 + channels.length) % channels.length; setChannel(channels[ni]); }}>◀ Prev</Btn>
             <Btn small onClick={() => { const ni = (idx + 1) % channels.length; setChannel(channels[ni]); }}>Next ▶</Btn>
@@ -496,11 +669,13 @@ const LiveTV = ({ setPage }) => {
           <Card>
             <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 12 }}>Channel Guide</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {channels.map(c => (
-                <div key={c} onClick={() => setChannel(c)}
-                  style={{ padding: "8px 12px", borderRadius: 8, cursor: "pointer", background: channel === c ? `${COLORS.primary}22` : "transparent",
-                    color: channel === c ? COLORS.primary : COLORS.text, border: channel === c ? `1px solid ${COLORS.primary}44` : "none", fontSize: 14, fontWeight: channel === c ? 700 : 400 }}>
-                  {c}
+              {allChannels.map(c => (
+                <div key={c.name} onClick={() => setChannel(c.name)}
+                  style={{ padding: "8px 12px", borderRadius: 8, cursor: "pointer", background: channel === c.name ? `${COLORS.primary}22` : "transparent",
+                    color: channel === c.name ? COLORS.primary : COLORS.text, border: channel === c.name ? `1px solid ${COLORS.primary}44` : "none", fontSize: 14, fontWeight: channel === c.name ? 700 : 400,
+                    display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>{c.name}</span>
+                  {c.custom && <Tag color={COLORS.blue}>mine</Tag>}
                 </div>
               ))}
             </div>
@@ -526,6 +701,9 @@ const LiveTV = ({ setPage }) => {
             <input type="range" min={0} max={100} value={volume} onChange={e => setVolume(Number(e.target.value))} style={{ width: "100%" }} />
           </Card>
         </div>
+      </div>
+      <div style={{ marginTop: 20 }}>
+        <AddCustomChannel customChannels={customChannels} setCustomChannels={setCustomChannels} />
       </div>
     </div>
   );
@@ -659,7 +837,7 @@ const Remote = () => {
   const [isOn, setIsOn] = useState(true);
   const [input, setInput] = useState("HDMI 1");
   const [paired, setPaired] = useState("Samsung Smart TV");
-  const channels = ["CNN","BBC","France 24","Al Jazeera","NTA Nigeria","DW","RT","Sky News","Euronews","CGTN"];
+  const channels = TV_CHANNELS.map(c => c.name);
   const BtnR = ({ onClick, children, style = {}, color }) => (
     <button onClick={onClick} style={{ background: color || COLORS.cardLight, border: `1px solid ${COLORS.border}`, color: COLORS.text,
       borderRadius: 10, padding: "12px 16px", cursor: "pointer", fontWeight: 600, fontSize: 14, transition: "all 0.15s", width: "100%", ...style }}>
