@@ -165,28 +165,135 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
   const [translating, setTranslating] = useState(false);
   const [translateError, setTranslateError] = useState("");
 
-  useEffect(() => {
-    if (!isOn || !showSubtitle) return;
-    let cancelled = false;
+  // ── Live tab-audio captioning ────────────────────────────────────────────
+  const [liveMode, setLiveMode] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [liveError, setLiveError] = useState("");
+  const mediaStreamRef = useRef(null);
+  const recorderRef = useRef(null);
+  const liveModeRef = useRef(false);
 
-    const translateOne = async (targetLanguage) => {
-      const res = await fetch("/api/translate-text", {
+  const translateText = async (text, targetLanguage) => {
+    const res = await fetch("/api/translate-text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, targetLanguage }),
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Translation service is unavailable right now.");
+    }
+    return res.json();
+  };
+
+  const sendChunkForTranscription = async (blob) => {
+    setTranscribing(true);
+    try {
+      const buf = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const audioBase64 = btoa(binary);
+
+      const res = await fetch("/api/transcribe-audio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: ch.content, targetLanguage }),
+        body: JSON.stringify({ audioBase64, sourceLanguage: ch.lang }),
       });
-      const contentType = res.headers.get("content-type") || "";
-      if (!contentType.includes("application/json")) {
-        throw new Error("Translation service is unavailable right now.");
+      const data = await res.json();
+      if (data.error) {
+        setLiveError(data.error);
+        return;
       }
-      return res.json();
+      if (data.transcript && data.transcript.trim()) {
+        const primary = await translateText(data.transcript, subtitleLang);
+        if (!primary.error) {
+          setTranslated(primary.translatedText);
+          setEngine(primary.engine);
+        }
+        if (secondLang) {
+          const second = await translateText(data.transcript, secondLang);
+          if (!second.error) setTranslatedSecond(second.translatedText);
+        }
+      }
+    } catch (err) {
+      setLiveError(err.message || "Live captioning hit an error — retrying.");
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
+  const recordChunkLoop = (stream) => {
+    if (!liveModeRef.current) return;
+    const audioOnlyStream = new MediaStream(stream.getAudioTracks());
+    const mimeType = (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
+      ? "audio/webm;codecs=opus" : "audio/webm";
+    const recorder = new MediaRecorder(audioOnlyStream, { mimeType });
+    recorderRef.current = recorder;
+    let chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = async () => {
+      if (chunks.length > 0) {
+        const blob = new Blob(chunks, { type: mimeType });
+        await sendChunkForTranscription(blob);
+      }
+      if (liveModeRef.current && mediaStreamRef.current) {
+        recordChunkLoop(mediaStreamRef.current);
+      }
     };
+    recorder.start();
+    setTimeout(() => { if (recorder.state !== "inactive") recorder.stop(); }, 6000);
+  };
+
+  const stopLive = () => {
+    liveModeRef.current = false;
+    setLiveMode(false);
+    setTranscribing(false);
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      try { recorderRef.current.stop(); } catch {}
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
+  };
+
+  const startLive = async () => {
+    setLiveError("");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      setLiveError("Live captions need a Chromium browser (Chrome/Edge) on desktop.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      if (stream.getAudioTracks().length === 0) {
+        stream.getTracks().forEach(t => t.stop());
+        setLiveError('No tab audio captured — when prompted, choose "This Tab" and check "Share tab audio."');
+        return;
+      }
+      mediaStreamRef.current = stream;
+      liveModeRef.current = true;
+      setLiveMode(true);
+      stream.getVideoTracks()[0]?.addEventListener("ended", stopLive);
+      recordChunkLoop(stream);
+    } catch (err) {
+      setLiveError("Screen/tab sharing permission was denied or cancelled.");
+    }
+  };
+
+  useEffect(() => () => stopLive(), []);
+  useEffect(() => { if (!isOn) stopLive(); }, [isOn]);
+  useEffect(() => { stopLive(); }, [channel]);
+
+  useEffect(() => {
+    if (!isOn || !showSubtitle || liveMode) return;
+    let cancelled = false;
 
     (async () => {
       setTranslating(true);
       setTranslateError("");
       try {
-        const primary = await translateOne(subtitleLang);
+        const primary = await translateText(ch.content, subtitleLang);
         if (cancelled) return;
         if (primary.error) {
           setTranslateError(primary.error);
@@ -197,7 +304,7 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
         }
 
         if (secondLang) {
-          const second = await translateOne(secondLang);
+          const second = await translateText(ch.content, secondLang);
           if (!cancelled && !second.error) setTranslatedSecond(second.translatedText);
         } else {
           setTranslatedSecond("");
@@ -210,7 +317,7 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
     })();
 
     return () => { cancelled = true; };
-  }, [channel, subtitleLang, secondLang, isOn, showSubtitle]);
+  }, [channel, subtitleLang, secondLang, isOn, showSubtitle, liveMode]);
 
   return (
     <div style={{ background: "#111", borderRadius: 16, overflow: "hidden", position: "relative", aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid #222" }}>
@@ -228,11 +335,26 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
             <span style={{ background: ch.bg, color: "#fff", fontSize: 13, fontWeight: 800, padding: "3px 10px", borderRadius: 4 }}>{channel}</span>
             <Tag color={COLORS.primary}>● LIVE</Tag>
             <Tag color={COLORS.gold}>{ch.lang} → {subtitleLang}</Tag>
+            {liveMode && <Tag color={COLORS.red}>● REC {transcribing ? "· transcribing" : ""}</Tag>}
+          </div>
+          <div style={{ position: "absolute", top: 12, right: 12, pointerEvents: "auto" }}>
+            {!liveMode ? (
+              <Btn small onClick={startLive}>🎙️ Live Captions (Beta)</Btn>
+            ) : (
+              <Btn small variant="outline" onClick={stopLive}>⏹ Stop Live Captions</Btn>
+            )}
           </div>
           {showSubtitle && (
             <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
+              {liveError && (
+                <div style={{ background: "rgba(120,0,0,0.85)", display: "inline-block", padding: "5px 14px", borderRadius: 6, fontSize: 12.5, color: "#fff", marginBottom: 6, maxWidth: "90%" }}>
+                  {liveError}
+                </div>
+              )}
               <div style={{ background: "rgba(0,0,0,0.85)", display: "inline-block", padding: "6px 18px", borderRadius: 6, fontSize: 15, color: "#fff", marginBottom: 4, maxWidth: "90%" }}>
-                {translating ? "[GloLingo AI] — Translating…" : translateError ? `[GloLingo AI] — ${translateError}` : translated ? translated : "[GloLingo AI] — Translation active"}
+                {liveMode
+                  ? (transcribing ? "[GloLingo AI] — Listening…" : (translated || "[GloLingo AI] — Waiting for speech…"))
+                  : (translating ? "[GloLingo AI] — Translating…" : translateError ? `[GloLingo AI] — ${translateError}` : translated ? translated : "[GloLingo AI] — Translation active")}
               </div>
               {secondLang && translatedSecond && (
                 <div style={{ background: "rgba(0,200,150,0.15)", display: "inline-block", padding: "4px 14px", borderRadius: 6, fontSize: 13, color: COLORS.primary }}>
@@ -240,7 +362,9 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
                 </div>
               )}
               <div style={{ color: COLORS.textMuted, fontSize: 11, marginTop: 4 }}>
-                {engine ? `GloLingo AI Active · ${engine === "deepl" ? "DeepL" : "Google Translate"}` : "GloLingo AI Active"}
+                {liveMode
+                  ? "Live captions from your shared tab audio"
+                  : (engine ? `GloLingo AI Active · ${engine === "deepl" ? "DeepL" : "Google Translate"}` : "GloLingo AI Active")}
               </div>
             </div>
           )}
