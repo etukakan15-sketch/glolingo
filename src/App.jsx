@@ -206,15 +206,16 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
         return;
       }
       if (data.transcript && data.transcript.trim()) {
-        const primary = await translateText(data.transcript, subtitleLang);
+        // Run both translation calls concurrently instead of one after another.
+        const [primary, second] = await Promise.all([
+          translateText(data.transcript, subtitleLang),
+          secondLang ? translateText(data.transcript, secondLang) : Promise.resolve(null),
+        ]);
         if (!primary.error) {
           setTranslated(primary.translatedText);
           setEngine(primary.engine);
         }
-        if (secondLang) {
-          const second = await translateText(data.transcript, secondLang);
-          if (!second.error) setTranslatedSecond(second.translatedText);
-        }
+        if (second && !second.error) setTranslatedSecond(second.translatedText);
       }
     } catch (err) {
       setLiveError(err.message || "Live captioning hit an error — retrying.");
@@ -232,10 +233,12 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
     recorderRef.current = recorder;
     let chunks = [];
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = async () => {
+    recorder.onstop = () => {
+      // Kick off transcription/translation in the background — don't block
+      // the next recording on it, so there's no dead-air gap between chunks.
       if (chunks.length > 0) {
         const blob = new Blob(chunks, { type: mimeType });
-        await sendChunkForTranscription(blob);
+        sendChunkForTranscription(blob);
       }
       if (liveModeRef.current && mediaStreamRef.current) {
         recordChunkLoop(mediaStreamRef.current);
