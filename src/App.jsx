@@ -365,7 +365,7 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
           )}
           <div style={{ fontSize: 15, color: "#fff", marginBottom: 4 }}>
             {liveMode
-              ? (transcribing ? "[GloLingo AI] — Listening…" : (translated || "[GloLingo AI] — Waiting for speech…"))
+              ? (translated || (transcribing ? "[GloLingo AI] — Listening…" : "[GloLingo AI] — Waiting for speech…"))
               : (translating ? "[GloLingo AI] — Translating…" : translateError ? `[GloLingo AI] — ${translateError}` : translated ? translated : "[GloLingo AI] — Translation active")}
           </div>
           {secondLang && translatedSecond && (
