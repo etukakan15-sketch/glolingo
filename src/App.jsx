@@ -265,7 +265,7 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, preferCurrentTab: true });
       if (stream.getAudioTracks().length === 0) {
         stream.getTracks().forEach(t => t.stop());
         setLiveError('No tab audio captured — when prompted, choose "This Tab" and check "Share tab audio."');
@@ -320,58 +320,61 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
   }, [channel, subtitleLang, secondLang, isOn, showSubtitle, liveMode]);
 
   return (
-    <div style={{ background: "#111", borderRadius: 16, overflow: "hidden", position: "relative", aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid #222" }}>
-      {isOn ? (
-        <div style={{ width: "100%", height: "100%", background: "#000", position: "relative" }}>
-          <iframe
-            key={ch.youtubeChannelId}
-            src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&mute=${volume === 0 ? 1 : 0}`}
-            title={`${channel} live`}
-            style={{ width: "100%", height: "100%", border: "none" }}
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowFullScreen
-          />
-          <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: 10, alignItems: "center", pointerEvents: "none" }}>
-            <span style={{ background: ch.bg, color: "#fff", fontSize: 13, fontWeight: 800, padding: "3px 10px", borderRadius: 4 }}>{channel}</span>
-            <Tag color={COLORS.primary}>● LIVE</Tag>
-            <Tag color={COLORS.gold}>{ch.lang} → {subtitleLang}</Tag>
-            {liveMode && <Tag color={COLORS.red}>● REC {transcribing ? "· transcribing" : ""}</Tag>}
-          </div>
-          <div style={{ position: "absolute", top: 12, right: 12, pointerEvents: "auto" }}>
-            {!liveMode ? (
-              <Btn small onClick={startLive}>🎙️ Live Captions (Beta)</Btn>
-            ) : (
-              <Btn small variant="outline" onClick={stopLive}>⏹ Stop Live Captions</Btn>
-            )}
-          </div>
-          {showSubtitle && (
-            <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center", pointerEvents: "none" }}>
-              {liveError && (
-                <div style={{ background: "rgba(120,0,0,0.85)", display: "inline-block", padding: "5px 14px", borderRadius: 6, fontSize: 12.5, color: "#fff", marginBottom: 6, maxWidth: "90%" }}>
-                  {liveError}
-                </div>
+    <div>
+      <div style={{ background: "#111", borderRadius: 16, overflow: "hidden", position: "relative", aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid #222" }}>
+        {isOn ? (
+          <div style={{ width: "100%", height: "100%", background: "#000", position: "relative" }}>
+            <iframe
+              key={ch.youtubeChannelId}
+              src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&mute=${volume === 0 ? 1 : 0}`}
+              title={`${channel} live`}
+              style={{ width: "100%", height: "100%", border: "none" }}
+              allow="autoplay; encrypted-media; picture-in-picture"
+              allowFullScreen
+            />
+            <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: 10, alignItems: "center", pointerEvents: "none" }}>
+              <span style={{ background: ch.bg, color: "#fff", fontSize: 13, fontWeight: 800, padding: "3px 10px", borderRadius: 4 }}>{channel}</span>
+              <Tag color={COLORS.primary}>● LIVE</Tag>
+              <Tag color={COLORS.gold}>{ch.lang} → {subtitleLang}</Tag>
+              {liveMode && <Tag color={COLORS.red}>● REC {transcribing ? "· transcribing" : ""}</Tag>}
+            </div>
+            <div style={{ position: "absolute", top: 12, right: 12, pointerEvents: "auto" }}>
+              {!liveMode ? (
+                <Btn small onClick={startLive}>Start Live Captions (Beta)</Btn>
+              ) : (
+                <Btn small variant="outline" onClick={stopLive}>⏹ Stop Live Captions</Btn>
               )}
-              <div style={{ background: "rgba(0,0,0,0.85)", display: "inline-block", padding: "6px 18px", borderRadius: 6, fontSize: 15, color: "#fff", marginBottom: 4, maxWidth: "90%" }}>
-                {liveMode
-                  ? (transcribing ? "[GloLingo AI] — Listening…" : (translated || "[GloLingo AI] — Waiting for speech…"))
-                  : (translating ? "[GloLingo AI] — Translating…" : translateError ? `[GloLingo AI] — ${translateError}` : translated ? translated : "[GloLingo AI] — Translation active")}
-              </div>
-              {secondLang && translatedSecond && (
-                <div style={{ background: "rgba(0,200,150,0.15)", display: "inline-block", padding: "4px 14px", borderRadius: 6, fontSize: 13, color: COLORS.primary }}>
-                  {secondLang}: {translatedSecond}
-                </div>
-              )}
-              <div style={{ color: COLORS.textMuted, fontSize: 11, marginTop: 4 }}>
-                {liveMode
-                  ? "Live captions from your shared tab audio"
-                  : (engine ? `GloLingo AI Active · ${engine === "deepl" ? "DeepL" : "Google Translate"}` : "GloLingo AI Active")}
-              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ color: COLORS.textMuted, fontSize: 16, textAlign: "center" }}>
+            <div style={{ fontSize: 48, marginBottom: 8 }}>◉</div>TV Off
+          </div>
+        )}
+      </div>
+
+      {isOn && showSubtitle && (
+        <div style={{ background: "#0d1525", border: `1px solid ${COLORS.border}`, borderTop: "none", borderRadius: "0 0 12px 12px", padding: "10px 16px", textAlign: "center" }}>
+          {liveError && (
+            <div style={{ background: "rgba(120,0,0,0.5)", display: "inline-block", padding: "5px 14px", borderRadius: 6, fontSize: 12.5, color: "#fff", marginBottom: 6, maxWidth: "95%" }}>
+              {liveError}
             </div>
           )}
-        </div>
-      ) : (
-        <div style={{ color: COLORS.textMuted, fontSize: 16, textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 8 }}>◉</div>TV Off
+          <div style={{ fontSize: 15, color: "#fff", marginBottom: 4 }}>
+            {liveMode
+              ? (transcribing ? "[GloLingo AI] — Listening…" : (translated || "[GloLingo AI] — Waiting for speech…"))
+              : (translating ? "[GloLingo AI] — Translating…" : translateError ? `[GloLingo AI] — ${translateError}` : translated ? translated : "[GloLingo AI] — Translation active")}
+          </div>
+          {secondLang && translatedSecond && (
+            <div style={{ background: "rgba(0,200,150,0.15)", display: "inline-block", padding: "4px 14px", borderRadius: 6, fontSize: 13, color: COLORS.primary, marginBottom: 4 }}>
+              {secondLang}: {translatedSecond}
+            </div>
+          )}
+          <div style={{ color: COLORS.textMuted, fontSize: 11 }}>
+            {liveMode
+              ? "Live captions from your shared tab audio"
+              : (engine ? `GloLingo AI Active · ${engine === "deepl" ? "DeepL" : "Google Translate"}` : "GloLingo AI Active")}
+          </div>
         </div>
       )}
     </div>
