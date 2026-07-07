@@ -69,7 +69,13 @@ export async function onRequest(context) {
 
   const dgSocket = dgResponse.webSocket;
   if (!dgSocket) {
-    server.send(JSON.stringify({ error: "Transcription service rejected the connection. Check the API key." }));
+    let detail = "";
+    try {
+      detail = await dgResponse.text();
+    } catch {}
+    server.send(JSON.stringify({
+      error: `Transcription service rejected the connection (HTTP ${dgResponse.status}). ${detail}`.slice(0, 300),
+    }));
     server.close(1011, "No upstream socket");
     return new Response(null, { status: 101, webSocket: client });
   }
