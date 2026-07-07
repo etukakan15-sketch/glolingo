@@ -38,8 +38,13 @@ export async function onRequest(context) {
   const sourceLanguage = url.searchParams.get("sourceLanguage") || "English";
   const languageCode = LANGUAGE_TO_DEEPGRAM_CODE[sourceLanguage] || "en";
 
-  const pair = new WebSocketPair();
+ const pair = new WebSocketPair();
   const [client, server] = Object.values(pair);
+  // IMPORTANT: as of Cloudflare's 2026-03-17+ compatibility dates, binary
+  // frames are delivered as Blob by default instead of ArrayBuffer. Our
+  // forwarding code below expects ArrayBuffer, so we force that explicitly
+  // — this MUST be set before accept() to take effect for every message.
+  server.binaryType = "arraybuffer";
   server.accept();
 
   const apiKey = env.DEEPGRAM_API_KEY;
