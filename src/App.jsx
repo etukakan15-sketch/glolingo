@@ -74,6 +74,9 @@ const TV_CHANNELS = [
   { name: "Bloomberg Originals", youtubeChannelId: "UCUMZ7gohGI9HcU9VNsr2FJQ", bg: "#000000", content: "Markets update: today's biggest business stories", lang: "English" },
   { name: "TRT World", youtubeChannelId: "UC7fWeaHhqgM4Ry-RMpM2YYw", bg: "#C8102E", content: "Global affairs and analysis from Istanbul", lang: "English" },
   { name: "Channels TV Nigeria", youtubeChannelId: "UCEXGDNclvmg6RW0vipJYsTQ", bg: "#008751", content: "Naija News: Lagos State Governor Speaks on Economy", lang: "English" },
+  { name: "PBS NewsHour", youtubeChannelId: "UC6ZFN9Tx6xh-skXCuRHCDpQ", bg: "#26314E", content: "Analysis and headlines from across the United States", lang: "English" },
+  { name: "ABC News Australia", youtubeChannelId: "UCVgO39Bk5sMo66-6o6Spn6Q", bg: "#E2231A", content: "Breaking news and coverage from across Australia", lang: "English" },
+  { name: "CBC News", youtubeChannelId: "UCuFFtHWoLl5fauMMD5Ww2jA", bg: "#E60000", content: "Live analysis of the day's top stories from Canada and the world", lang: "English" },
 ];
 
 // ─── USER-ADDED CUSTOM CHANNELS (localStorage-backed) ─────────────────────────
@@ -165,13 +168,14 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
   const [translating, setTranslating] = useState(false);
   const [translateError, setTranslateError] = useState("");
 
-  // ── Live tab-audio captioning ────────────────────────────────────────────
+  // ── Live tab-audio captioning (real streaming via Deepgram) ──────────────
   const [liveMode, setLiveMode] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [liveError, setLiveError] = useState("");
   const mediaStreamRef = useRef(null);
   const recorderRef = useRef(null);
   const liveModeRef = useRef(false);
+  const wsRef = useRef(null);
 
   const translateText = async (text, targetLanguage) => {
     const res = await fetch("/api/translate-text", {
@@ -186,66 +190,28 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
     return res.json();
   };
 
-  const sendChunkForTranscription = async (blob) => {
+  // Called whenever Deepgram finishes a phrase (a "final" segment) — usually
+  // triggered by a natural pause in speech, not a fixed timer, so captions
+  // arrive as soon as something is actually said instead of waiting out a
+  // rigid chunk window.
+  const handleFinalTranscript = async (transcript) => {
+    if (!transcript || !transcript.trim()) return;
     setTranscribing(true);
     try {
-      const buf = await blob.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      const audioBase64 = btoa(binary);
-
-      const res = await fetch("/api/transcribe-audio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64, sourceLanguage: ch.lang }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setLiveError(data.error);
-        return;
+      const [primary, second] = await Promise.all([
+        translateText(transcript, subtitleLang),
+        secondLang ? translateText(transcript, secondLang) : Promise.resolve(null),
+      ]);
+      if (!primary.error) {
+        setTranslated(primary.translatedText);
+        setEngine(primary.engine);
       }
-      if (data.transcript && data.transcript.trim()) {
-        // Run both translation calls concurrently instead of one after another.
-        const [primary, second] = await Promise.all([
-          translateText(data.transcript, subtitleLang),
-          secondLang ? translateText(data.transcript, secondLang) : Promise.resolve(null),
-        ]);
-        if (!primary.error) {
-          setTranslated(primary.translatedText);
-          setEngine(primary.engine);
-        }
-        if (second && !second.error) setTranslatedSecond(second.translatedText);
-      }
+      if (second && !second.error) setTranslatedSecond(second.translatedText);
     } catch (err) {
-      setLiveError(err.message || "Live captioning hit an error — retrying.");
+      setLiveError(err.message || "Translation hit an error — retrying.");
     } finally {
       setTranscribing(false);
     }
-  };
-
-  const recordChunkLoop = (stream) => {
-    if (!liveModeRef.current) return;
-    const audioOnlyStream = new MediaStream(stream.getAudioTracks());
-    const mimeType = (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
-      ? "audio/webm;codecs=opus" : "audio/webm";
-    const recorder = new MediaRecorder(audioOnlyStream, { mimeType });
-    recorderRef.current = recorder;
-    let chunks = [];
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = () => {
-      // Kick off transcription/translation in the background — don't block
-      // the next recording on it, so there's no dead-air gap between chunks.
-      if (chunks.length > 0) {
-        const blob = new Blob(chunks, { type: mimeType });
-        sendChunkForTranscription(blob);
-      }
-      if (liveModeRef.current && mediaStreamRef.current) {
-        recordChunkLoop(mediaStreamRef.current);
-      }
-    };
-    recorder.start();
-    setTimeout(() => { if (recorder.state !== "inactive") recorder.stop(); }, 6000);
   };
 
   const stopLive = () => {
@@ -254,6 +220,10 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
     setTranscribing(false);
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       try { recorderRef.current.stop(); } catch {}
+    }
+    if (wsRef.current) {
+      try { wsRef.current.close(); } catch {}
+      wsRef.current = null;
     }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(t => t.stop());
@@ -278,7 +248,49 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
       liveModeRef.current = true;
       setLiveMode(true);
       stream.getVideoTracks()[0]?.addEventListener("ended", stopLive);
-      recordChunkLoop(stream);
+
+      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${wsProtocol}//${window.location.host}/api/live-transcribe?sourceLanguage=${encodeURIComponent(ch.lang)}`);
+      wsRef.current = ws;
+
+      ws.onerror = () => setLiveError("Couldn't connect to the live captioning service — retrying may help.");
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.error) {
+            setLiveError(msg.error);
+            return;
+          }
+          if (msg.is_final && msg.transcript) {
+            handleFinalTranscript(msg.transcript);
+          }
+        } catch {
+          // Ignore malformed messages rather than breaking the session.
+        }
+      };
+
+      ws.onopen = () => {
+        const audioOnlyStream = new MediaStream(stream.getAudioTracks());
+        const mimeType = (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
+          ? "audio/webm;codecs=opus" : "audio/webm";
+        const recorder = new MediaRecorder(audioOnlyStream, { mimeType });
+        recorderRef.current = recorder;
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            e.data.arrayBuffer().then(buf => {
+              if (ws.readyState === WebSocket.OPEN) ws.send(buf);
+            });
+          }
+        };
+        // Small timeslice = frequent small chunks streamed continuously,
+        // not one big chunk every few seconds.
+        recorder.start(250);
+      };
+
+      ws.onclose = () => {
+        if (liveModeRef.current) setLiveError("Live captioning connection closed.");
+      };
     } catch (err) {
       setLiveError("Screen/tab sharing permission was denied or cancelled.");
     }
