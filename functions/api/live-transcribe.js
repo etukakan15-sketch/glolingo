@@ -69,12 +69,12 @@ export async function onRequest(context) {
 
   const dgSocket = dgResponse.webSocket;
   if (!dgSocket) {
-    let detail = "";
-    try {
-      detail = await dgResponse.text();
-    } catch {}
+    // Surface Deepgram's actual rejection reason instead of guessing.
+    let bodyText = "";
+    try { bodyText = await dgResponse.text(); } catch {}
+    console.log("Deepgram handshake rejected:", dgResponse.status, dgResponse.statusText, bodyText);
     server.send(JSON.stringify({
-      error: `Transcription service rejected the connection (HTTP ${dgResponse.status}). ${detail}`.slice(0, 300),
+      error: `Transcription service rejected the connection (HTTP ${dgResponse.status}): ${bodyText || dgResponse.statusText}`,
     }));
     server.close(1011, "No upstream socket");
     return new Response(null, { status: 101, webSocket: client });
@@ -91,27 +91,51 @@ export async function onRequest(context) {
   });
 
   // Deepgram -> browser: normalize to a simple { transcript, is_final } shape.
+  // Anything that ISN'T a normal transcript payload (Deepgram error frames,
+  // warnings, unexpected shapes) now gets logged AND forwarded to the
+  // browser instead of silently dropped, so failures are visible instead of
+  // just looking like a connection that mysteriously stops working.
   dgSocket.addEventListener("message", (event) => {
+    let data;
     try {
-      const data = JSON.parse(event.data);
-      const alt = data.channel?.alternatives?.[0];
-      const transcript = alt?.transcript || "";
-      if (transcript) {
-        server.send(JSON.stringify({ transcript, is_final: !!data.is_final }));
-      }
-    } catch {
-      // Ignore any non-JSON or unexpected message shape from upstream.
+      data = JSON.parse(event.data);
+    } catch (err) {
+      console.log("Deepgram sent non-JSON message:", event.data);
+      return;
+    }
+
+    // Deepgram error frames look like: { type: "Error", description: "...", ... }
+    if (data.type === "Error" || data.error) {
+      console.log("Deepgram error frame:", JSON.stringify(data));
+      try {
+        server.send(JSON.stringify({
+          error: `Deepgram error: ${data.description || data.error || data.message || JSON.stringify(data)}`,
+        }));
+      } catch {}
+      return;
+    }
+
+    const alt = data.channel?.alternatives?.[0];
+    const transcript = alt?.transcript || "";
+    if (transcript) {
+      server.send(JSON.stringify({ transcript, is_final: !!data.is_final }));
+    } else if (data.type && data.type !== "Results") {
+      // Log any other unrecognized-but-structured message type (metadata,
+      // UtteranceEnd, SpeechStarted, etc.) so we can see the full shape of
+      // what Deepgram is actually sending during a live session.
+      console.log("Deepgram message (no transcript):", JSON.stringify(data).slice(0, 500));
     }
   });
 
-  const cleanup = () => {
+  const cleanup = (label) => (event) => {
+    console.log(`${label} closed/errored:`, event?.code, event?.reason || event?.message || "");
     try { server.close(); } catch {}
     try { dgSocket.close(); } catch {}
   };
-  server.addEventListener("close", cleanup);
-  server.addEventListener("error", cleanup);
-  dgSocket.addEventListener("close", cleanup);
-  dgSocket.addEventListener("error", cleanup);
+  server.addEventListener("close", cleanup("client socket"));
+  server.addEventListener("error", cleanup("client socket"));
+  dgSocket.addEventListener("close", cleanup("deepgram socket"));
+  dgSocket.addEventListener("error", cleanup("deepgram socket"));
 
   return new Response(null, { status: 101, webSocket: client });
 }
