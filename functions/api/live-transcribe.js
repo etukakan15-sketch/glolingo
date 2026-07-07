@@ -81,15 +81,33 @@ export async function onRequest(context) {
   }
   dgSocket.accept();
 
-  // Browser -> Deepgram: forward raw audio bytes as they arrive.
+// Browser -> Deepgram: forward raw audio bytes as they arrive.
+  // Guard against ever forwarding a text frame here — Deepgram's audio
+  // channel only accepts binary frames, and a stray text frame is exactly
+  // what produces "Could not deserialize last text message" on their side.
+  let loggedFirstChunk = false;
   server.addEventListener("message", (event) => {
     try {
-      dgSocket.send(event.data);
-    } catch {
-      // Upstream socket may have closed; nothing to do but drop this frame.
+      if (!loggedFirstChunk) {
+        console.log(
+          "First client->relay message type:",
+          typeof event.data,
+          event.data instanceof ArrayBuffer ? `ArrayBuffer(${event.data.byteLength} bytes)` : ""
+        );
+        loggedFirstChunk = true;
+      }
+      if (typeof event.data === "string") {
+        // This should never happen for audio — log it and drop it instead
+        // of forwarding text into Deepgram's binary audio channel.
+        console.log("Dropped unexpected text frame from client:", event.data.slice(0, 200));
+        return;
+      }
+      const bytes = event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : event.data;
+      dgSocket.send(bytes);
+    } catch (err) {
+      console.log("Error forwarding audio to Deepgram:", err.message);
     }
   });
-
   // Deepgram -> browser: normalize to a simple { transcript, is_final } shape.
   // Anything that ISN'T a normal transcript payload (Deepgram error frames,
   // warnings, unexpected shapes) now gets logged AND forwarded to the
