@@ -391,7 +391,7 @@ const mediaStreamRef = useRef(null);
           <div style={{ width: "100%", height: "100%", background: "#000", position: "relative" }}>
             <iframe
               key={ch.youtubeChannelId}
-              src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&mute=${volume === 0 ? 1 : 0}`}
+              src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&fs=0&mute=${volume === 0 ? 1 : 0}`}
               title={`${channel} live`}
               style={{ width: "100%", height: "100%", border: "none" }}
              allow="autoplay; encrypted-media; picture-in-picture"
@@ -409,7 +409,7 @@ const mediaStreamRef = useRef(null);
                 <Btn small variant="outline" onClick={stopLive}>⏹ Stop Live Captions</Btn>
               )}
               <Btn small variant="ghost" onClick={toggleFullscreen} style={{ padding: "8px 10px" }}>
-                {isFullscreen ? "⤡" : "⤢"}
+               {isFullscreen ? "⤡ Exit Fullscreen" : "⤢ Fullscreen"}
               </Btn>
             </div>
           </div>
@@ -427,17 +427,17 @@ const mediaStreamRef = useRef(null);
               {liveError}
             </div>
           )}
-          <div style={{ fontSize: 15, color: "#fff", marginBottom: 4 }}>
+         <div style={{ fontSize: isFullscreen ? 28 : 15, color: "#fff", marginBottom: 4 }}>
             {liveMode
               ? (translated || (transcribing ? "[GloLingo AI] — Listening…" : "[GloLingo AI] — Waiting for speech…"))
               : (translating ? "[GloLingo AI] — Translating…" : translateError ? `[GloLingo AI] — ${translateError}` : translated ? translated : "[GloLingo AI] — Translation active")}
           </div>
           {secondLang && translatedSecond && (
-            <div style={{ background: "rgba(0,200,150,0.15)", display: "inline-block", padding: "4px 14px", borderRadius: 6, fontSize: 13, color: COLORS.primary, marginBottom: 4 }}>
+           <div style={{ background: "rgba(0,200,150,0.15)", display: "inline-block", padding: isFullscreen ? "8px 20px" : "4px 14px", borderRadius: 6, fontSize: isFullscreen ? 22 : 13, color: COLORS.primary, marginBottom: 4 }}>
               {secondLang}: {translatedSecond}
             </div>
           )}
-          <div style={{ color: COLORS.textMuted, fontSize: 11 }}>
+         <div style={{ color: COLORS.textMuted, fontSize: isFullscreen ? 15 : 11 }}>
             {liveMode
               ? "Live captions from your shared tab audio"
               : (engine ? `GloLingo AI Active · ${engine === "deepl" ? "DeepL" : "Google Translate"}` : "GloLingo AI Active")}
