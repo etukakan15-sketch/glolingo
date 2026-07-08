@@ -67,7 +67,7 @@ const LANGUAGE_ENGINES = {
 const TV_CHANNELS = [
   { name: "DW News", youtubeChannelId: "UCknLrEdhRCp1aegoMqRaCZg", bg: "#003087", content: "Breaking News: World Leaders Gather for AI Summit", lang: "English" },
   { name: "France 24", youtubeChannelId: "UCQfwfsi5VrQ8yKZ-UWmAEFg", bg: "#f00000", content: "Actualités mondiales — nouvelles du jour", lang: "French" },
-  { name: "Al Jazeera English", youtubeChannelId: "UCNye-wNBqNL5ZzHSJj3l8Bg", bg: "#009639", content: "أخبار الشرق الأوسط والعالم", lang: "Arabic" },
+  { name: "Al Jazeera English", youtubeChannelId: "UCNye-wNBqNL5ZzHSJj3l8Bg", bg: "#009639", content: "Top stories from the Middle East and around the world", lang: "English" },
   { name: "Euronews", youtubeChannelId: "UCSrZ3UV4jOidv8ppoVuvW9Q", bg: "#0033A0", content: "Top stories from across Europe this hour", lang: "English" },
   { name: "NHK World Japan", youtubeChannelId: "UCSPEjw8F2nQDtmUKPFNF7_A", bg: "#BC002D", content: "日本とアジアの最新ニュース", lang: "Japanese" },
   { name: "Africanews", youtubeChannelId: "UC1_E8NeF5QHY2dtdLRBCCLA", bg: "#F7A800", content: "The latest headlines from across the African continent", lang: "English" },
