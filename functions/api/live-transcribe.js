@@ -37,6 +37,9 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const sourceLanguage = url.searchParams.get("sourceLanguage") || "English";
   const languageCode = LANGUAGE_TO_DEEPGRAM_CODE[sourceLanguage] || "en";
+  const multiLang = url.searchParams.get("multiLang") === "true";
+const effectiveLanguageCode = multiLang ? "multi" : languageCode;
+const endpointingMs = multiLang ? 100 : 300;
 
  const pair = new WebSocketPair();
   const [client, server] = Object.values(pair);
@@ -55,8 +58,8 @@ export async function onRequest(context) {
   }
 
   const deepgramUrl =
-    `https://api.deepgram.com/v1/listen?model=nova-2&language=${languageCode}` +
-    `&punctuate=true&interim_results=true&endpointing=300`;
+    `https://api.deepgram.com/v1/listen?model=nova-2&language=${effectiveLanguageCode}` +
+    `&punctuate=true&interim_results=true&endpointing=${endpointingMs}`;
 
   let dgResponse;
   try {

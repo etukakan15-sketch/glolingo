@@ -285,7 +285,7 @@ const mediaStreamRef = useRef(null);
       stream.getVideoTracks()[0]?.addEventListener("ended", stopLive);
 
       const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${wsProtocol}//${window.location.host}/api/live-transcribe?sourceLanguage=${encodeURIComponent(ch.lang)}`);
+      const ws = new WebSocket(`${wsProtocol}//${window.location.host}/api/live-transcribe?sourceLanguage=${encodeURIComponent(ch.lang)}&multiLang=${channelsMultiLang[ch.name] ? "true" : "false"}`);
       wsRef.current = ws;
 
       ws.onerror = () => setLiveError("Couldn't connect to the live captioning service — retrying may help.");
@@ -850,6 +850,7 @@ const LiveTV = ({ setPage }) => {
   const [secondLang, setSecondLang] = useState("");
  const [showSubtitle, setShowSubtitle] = useState(true);
   const [showRawPreview, setShowRawPreview] = useState(false);
+  const [channelsMultiLang, setChannelsMultiLang] = useState({});
   const channels = allChannels.map(c => c.name);
   const idx = channels.indexOf(channel);
   return (
@@ -900,6 +901,10 @@ const LiveTV = ({ setPage }) => {
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                 <input type="checkbox" checked={showRawPreview} onChange={e => setShowRawPreview(e.target.checked)} id="rawpreview" />
                 <label htmlFor="rawpreview" style={{ color: COLORS.text, fontSize: 14, cursor: "pointer" }}>Show instant raw preview (untranslated, no delay)</label>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <input type="checkbox" checked={!!channelsMultiLang[channel]} onChange={e => setChannelsMultiLang(prev => ({ ...prev, [channel]: e.target.checked }))} id="multilang" />
+                <label htmlFor="multilang" style={{ color: COLORS.text, fontSize: 14, cursor: "pointer" }}>Auto-detect multiple speakers/languages (this channel)</label>
               </div>
           </Card>
           <Card>
