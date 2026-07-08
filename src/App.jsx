@@ -159,7 +159,7 @@ const Select = ({ value, onChange, options, style = {} }) => (
 );
 
 // ─── TV SCREEN ────────────────────────────────────────────────────────────────
-const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitle, channelsList = TV_CHANNELS }) => {
+const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitle,showRawPreview, channelsList = TV_CHANNELS }) => {
   const ch = channelsList.find(c => c.name === channel) || channelsList[0] || TV_CHANNELS[0];
 
   const [translated, setTranslated] = useState("");
@@ -169,7 +169,8 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
   const [translateError, setTranslateError] = useState("");
 
   // ── Live tab-audio captioning (real streaming via Deepgram) ──────────────
-  const [liveMode, setLiveMode] = useState(false);
+ const [liveMode, setLiveMode] = useState(false);
+  const [rawTranscript, setRawTranscript] = useState("");
   const [transcribing, setTranscribing] = useState(false);
   const [liveError, setLiveError] = useState("");
 const mediaStreamRef = useRef(null);
@@ -224,6 +225,7 @@ const mediaStreamRef = useRef(null);
   // captions visibly refresh well before a full sentence finishes,
   // instead of sitting frozen for 4-5+ seconds waiting on "final".
   const handleTranscriptUpdate = (transcript, isFinal) => {
+    setRawTranscript(transcript);
     pendingTranscriptRef.current = transcript;
 
     if (isFinal) {
@@ -427,6 +429,11 @@ const mediaStreamRef = useRef(null);
               {liveError}
             </div>
           )}
+          {showRawPreview && liveMode && rawTranscript && (
+                <div style={{ fontSize: isFullscreen ? 20 : 12, color: "#aaa", fontStyle: "italic", marginBottom: 4 }}>
+                  {rawTranscript}
+                </div>
+              )}
          <div style={{ fontSize: isFullscreen ? 28 : 15, color: "#fff", marginBottom: 4 }}>
             {liveMode
               ? (translated || (transcribing ? "[GloLingo AI] — Listening…" : "[GloLingo AI] — Waiting for speech…"))
@@ -841,7 +848,8 @@ const LiveTV = ({ setPage }) => {
   const [isOn, setIsOn] = useState(true);
   const [subtitleLang, setSubtitleLang] = useState("Yoruba");
   const [secondLang, setSecondLang] = useState("");
-  const [showSubtitle, setShowSubtitle] = useState(true);
+ const [showSubtitle, setShowSubtitle] = useState(true);
+  const [showRawPreview, setShowRawPreview] = useState(false);
   const channels = allChannels.map(c => c.name);
   const idx = channels.indexOf(channel);
   return (
@@ -850,7 +858,7 @@ const LiveTV = ({ setPage }) => {
       <p style={{ color: COLORS.textMuted, marginBottom: 20 }}>Global channels with real-time AI translation. Full audio replacement active.</p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20 }}>
         <div>
-          <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} channelsList={allChannels} />
+          <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} showRawPreview={showRawPreview} channelsList={allChannels} />
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
             <Btn small onClick={() => { const ni = (idx - 1 + channels.length) % channels.length; setChannel(channels[ni]); }}>◀ Prev</Btn>
             <Btn small onClick={() => { const ni = (idx + 1) % channels.length; setChannel(channels[ni]); }}>Next ▶</Btn>
@@ -889,6 +897,10 @@ const LiveTV = ({ setPage }) => {
               <input type="checkbox" checked={showSubtitle} onChange={e => setShowSubtitle(e.target.checked)} id="subs" />
               <label htmlFor="subs" style={{ color: COLORS.text, fontSize: 14, cursor: "pointer" }}>Show subtitles</label>
             </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <input type="checkbox" checked={showRawPreview} onChange={e => setShowRawPreview(e.target.checked)} id="rawpreview" />
+                <label htmlFor="rawpreview" style={{ color: COLORS.text, fontSize: 14, cursor: "pointer" }}>Show instant raw preview (untranslated, no delay)</label>
+              </div>
           </Card>
           <Card>
             <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 12 }}>Volume — {volume}%</div>
