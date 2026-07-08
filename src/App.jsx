@@ -172,10 +172,12 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
   const [liveMode, setLiveMode] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [liveError, setLiveError] = useState("");
-  const mediaStreamRef = useRef(null);
+const mediaStreamRef = useRef(null);
   const recorderRef = useRef(null);
   const liveModeRef = useRef(false);
   const wsRef = useRef(null);
+  const containerRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const translateText = async (text, targetLanguage) => {
     const res = await fetch("/api/translate-text", {
@@ -327,9 +329,26 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
     }
   };
 
-  useEffect(() => () => stopLive(), []);
+ useEffect(() => () => stopLive(), []);
   useEffect(() => { if (!isOn) stopLive(); }, [isOn]);
   useEffect(() => { stopLive(); }, [channel]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      containerRef.current.requestFullscreen().catch(() => {
+        setLiveError("Fullscreen isn't available in this browser.");
+      });
+    }
+  };
 
   useEffect(() => {
     if (!isOn || !showSubtitle || liveMode) return;
@@ -365,9 +384,9 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
     return () => { cancelled = true; };
   }, [channel, subtitleLang, secondLang, isOn, showSubtitle, liveMode]);
 
-  return (
-    <div>
-      <div style={{ background: "#111", borderRadius: 16, overflow: "hidden", position: "relative", aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center", border: "3px solid #222" }}>
+ return (
+    <div ref={containerRef} style={isFullscreen ? { display: "flex", flexDirection: "column", height: "100vh", background: COLORS.dark } : undefined}>
+      <div style={{ background: "#111", borderRadius: isFullscreen ? 0 : 16, overflow: "hidden", position: "relative", aspectRatio: isFullscreen ? undefined : "16/9", flex: isFullscreen ? 1 : undefined, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", border: isFullscreen ? "none" : "3px solid #222" }}>
         {isOn ? (
           <div style={{ width: "100%", height: "100%", background: "#000", position: "relative" }}>
             <iframe
@@ -375,8 +394,7 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
               src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&mute=${volume === 0 ? 1 : 0}`}
               title={`${channel} live`}
               style={{ width: "100%", height: "100%", border: "none" }}
-              allow="autoplay; encrypted-media; picture-in-picture"
-              allowFullScreen
+             allow="autoplay; encrypted-media; picture-in-picture"
             />
             <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: 10, alignItems: "center", pointerEvents: "none" }}>
               <span style={{ background: ch.bg, color: "#fff", fontSize: 13, fontWeight: 800, padding: "3px 10px", borderRadius: 4 }}>{channel}</span>
@@ -384,12 +402,15 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
               <Tag color={COLORS.gold}>{ch.lang} → {subtitleLang}</Tag>
               {liveMode && <Tag color={COLORS.red}>● REC {transcribing ? "· transcribing" : ""}</Tag>}
             </div>
-            <div style={{ position: "absolute", top: 12, right: 12, pointerEvents: "auto" }}>
+           <div style={{ position: "absolute", top: 12, right: 12, pointerEvents: "auto", display: "flex", gap: 8 }}>
               {!liveMode ? (
                 <Btn small onClick={startLive}>Start Live Captions (Beta)</Btn>
               ) : (
                 <Btn small variant="outline" onClick={stopLive}>⏹ Stop Live Captions</Btn>
               )}
+              <Btn small variant="ghost" onClick={toggleFullscreen} style={{ padding: "8px 10px" }}>
+                {isFullscreen ? "⤡" : "⤢"}
+              </Btn>
             </div>
           </div>
         ) : (
@@ -400,7 +421,7 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
       </div>
 
       {isOn && showSubtitle && (
-        <div style={{ background: "#0d1525", border: `1px solid ${COLORS.border}`, borderTop: "none", borderRadius: "0 0 12px 12px", padding: "10px 16px", textAlign: "center" }}>
+    <div style={{ background: "#0d1525", border: `1px solid ${COLORS.border}`, borderTop: "none", borderRadius: isFullscreen ? 0 : "0 0 12px 12px", padding: isFullscreen ? "16px 24px" : "10px 16px", textAlign: "center", flexShrink: 0 }}>
           {liveError && (
             <div style={{ background: "rgba(120,0,0,0.5)", display: "inline-block", padding: "5px 14px", borderRadius: 6, fontSize: 12.5, color: "#fff", marginBottom: 6, maxWidth: "95%" }}>
               {liveError}
