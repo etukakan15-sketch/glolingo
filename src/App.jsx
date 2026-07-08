@@ -190,12 +190,14 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
     return res.json();
   };
 
-  // Called whenever Deepgram finishes a phrase (a "final" segment) — usually
-  // triggered by a natural pause in speech, not a fixed timer, so captions
-  // arrive as soon as something is actually said instead of waiting out a
-  // rigid chunk window.
-  const handleFinalTranscript = async (transcript) => {
+  const lastTranslateAtRef = useRef(0);
+  const pendingTranscriptRef = useRef("");
+  const throttleTimerRef = useRef(null);
+
+  const runTranslate = async () => {
+    const transcript = pendingTranscriptRef.current;
     if (!transcript || !transcript.trim()) return;
+    lastTranslateAtRef.current = Date.now();
     setTranscribing(true);
     try {
       const [primary, second] = await Promise.all([
@@ -211,6 +213,35 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
       setLiveError(err.message || "Translation hit an error — retrying.");
     } finally {
       setTranscribing(false);
+    }
+  };
+
+  // Handles BOTH interim and final transcripts from Deepgram. Final
+  // transcripts translate immediately (accuracy matters most there).
+  // Interim transcripts are throttled to at most once every ~700ms so
+  // captions visibly refresh well before a full sentence finishes,
+  // instead of sitting frozen for 4-5+ seconds waiting on "final".
+  const handleTranscriptUpdate = (transcript, isFinal) => {
+    pendingTranscriptRef.current = transcript;
+
+    if (isFinal) {
+      if (throttleTimerRef.current) {
+        clearTimeout(throttleTimerRef.current);
+        throttleTimerRef.current = null;
+      }
+      runTranslate();
+      return;
+    }
+
+    const minGapMs = 700;
+    const elapsed = Date.now() - lastTranslateAtRef.current;
+    if (elapsed >= minGapMs) {
+      runTranslate();
+    } else if (!throttleTimerRef.current) {
+      throttleTimerRef.current = setTimeout(() => {
+        throttleTimerRef.current = null;
+        runTranslate();
+      }, minGapMs - elapsed);
     }
   };
 
@@ -262,8 +293,8 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
             setLiveError(msg.error);
             return;
           }
-          if (msg.is_final && msg.transcript) {
-            handleFinalTranscript(msg.transcript);
+         if (msg.transcript) {
+            handleTranscriptUpdate(msg.transcript, !!msg.is_final);
           }
         } catch {
           // Ignore malformed messages rather than breaking the session.
