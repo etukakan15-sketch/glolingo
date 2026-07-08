@@ -233,7 +233,7 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
       return;
     }
 
-    const minGapMs = 350;
+    const minGapMs = 150;
     const elapsed = Date.now() - lastTranslateAtRef.current;
     if (elapsed >= minGapMs) {
       runTranslate();
