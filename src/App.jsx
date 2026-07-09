@@ -327,7 +327,7 @@ const mediaStreamRef = useRef(null);
         if (liveModeRef.current) setLiveError("Live captioning connection closed.");
       };
     } catch (err) {
-      setLiveError("Screen/tab sharing permission was denied or cancelled.");
+      setLiveError("Live captions error: " + (err && err.message ? err.message : String(err)));
     }
   };
 
