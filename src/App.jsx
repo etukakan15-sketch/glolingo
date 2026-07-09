@@ -2347,7 +2347,7 @@ export default function GloLingo() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
-           {user?.email === "etukakan15@gmail.com" && (
+           {currentUser?.email === "etukakan15@gmail.com" && (
                 <>
                   <Btn small variant="ghost" onClick={() => setPage("admin")}>Admin</Btn>
                   <Btn small variant="ghost" onClick={() => setPage("owner")} style={{ color: COLORS.gold }}>Owner</Btn>
