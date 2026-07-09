@@ -159,7 +159,7 @@ const Select = ({ value, onChange, options, style = {} }) => (
 );
 
 // ─── TV SCREEN ────────────────────────────────────────────────────────────────
-const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitle,showRawPreview, channelsList = TV_CHANNELS }) => {
+const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitle,showRawPreview,channelsMultiLang, channelsList = TV_CHANNELS }) => {
   const ch = channelsList.find(c => c.name === channel) || channelsList[0] || TV_CHANNELS[0];
 
   const [translated, setTranslated] = useState("");
@@ -859,7 +859,7 @@ const LiveTV = ({ setPage }) => {
       <p style={{ color: COLORS.textMuted, marginBottom: 20 }}>Global channels with real-time AI translation. Full audio replacement active.</p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20 }}>
         <div>
-          <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} showRawPreview={showRawPreview} channelsList={allChannels} />
+          <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} showRawPreview={showRawPreview}channelsMultiLang={channelsMultiLang}  channelsList={allChannels} />
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
             <Btn small onClick={() => { const ni = (idx - 1 + channels.length) % channels.length; setChannel(channels[ni]); }}>◀ Prev</Btn>
             <Btn small onClick={() => { const ni = (idx + 1) % channels.length; setChannel(channels[ni]); }}>Next ▶</Btn>
