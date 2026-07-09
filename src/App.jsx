@@ -393,7 +393,7 @@ const mediaStreamRef = useRef(null);
           <div style={{ width: "100%", height: "100%", background: "#000", position: "relative" }}>
             <iframe
               key={ch.youtubeChannelId}
-              src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&fs=0&mute=${volume === 0 ? 1 : 0}`}
+              src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&fs=0&controls=0&mute=${volume === 0 ? 1 : 0}`}
               title={`${channel} live`}
               style={{ width: "100%", height: "100%", border: "none" }}
              allow="autoplay; encrypted-media; picture-in-picture"
@@ -2347,8 +2347,12 @@ export default function GloLingo() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
-            <Btn small variant="ghost" onClick={() => setPage("admin")}>Admin</Btn>
-            <Btn small variant="ghost" onClick={() => setPage("owner")} style={{ color: COLORS.gold }}>Owner</Btn>
+           {user?.email === "etukakan15@gmail.com" && (
+                <>
+                  <Btn small variant="ghost" onClick={() => setPage("admin")}>Admin</Btn>
+                  <Btn small variant="ghost" onClick={() => setPage("owner")} style={{ color: COLORS.gold }}>Owner</Btn>
+                </>
+              )}
             {currentUser ? (
               <>
                 <div style={{ fontSize: 12, color: COLORS.textMuted, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
