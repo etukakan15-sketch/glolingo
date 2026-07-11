@@ -39,7 +39,7 @@ export async function onRequest(context) {
   const languageCode = LANGUAGE_TO_DEEPGRAM_CODE[sourceLanguage] || "en";
   const multiLang = url.searchParams.get("multiLang") === "true";
 const effectiveLanguageCode = multiLang ? "multi" : languageCode;
-const endpointingMs = multiLang ? 100 : 300;
+const endpointingMs = multiLang ? 300 : 700;
 
  const pair = new WebSocketPair();
   const [client, server] = Object.values(pair);

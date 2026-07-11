@@ -159,7 +159,7 @@ const Select = ({ value, onChange, options, style = {} }) => (
 );
 
 // ─── TV SCREEN ────────────────────────────────────────────────────────────────
-const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitle,showRawPreview,channelsMultiLang, channelsList = TV_CHANNELS }) => {
+const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitle,showRawPreview,channelsMultiLang, channelsList = TV_CHANNELS , dubEnabled}) => {
   const ch = channelsList.find(c => c.name === channel) || channelsList[0] || TV_CHANNELS[0];
 
   const [translated, setTranslated] = useState("");
@@ -169,7 +169,11 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
   const [translateError, setTranslateError] = useState("");
 
   // ── Live tab-audio captioning (real streaming via Deepgram) ──────────────
- const [liveMode, setLiveMode] = useState(false);
+ const  dubAudioRef = useRef(null);
+ const playerRef = useRef(null);
+  const playerContainerId = useRef(`yt-player-${Math.random().toString(36).slice(2)}`).current;
+  const [liveVideoId, setLiveVideoId] = useState(null);
+  const [liveMode, setLiveMode] = useState(false);
   const [rawTranscript, setRawTranscript] = useState("");
   const [transcribing, setTranscribing] = useState(false);
   const [liveError, setLiveError] = useState("");
@@ -192,16 +196,95 @@ const mediaStreamRef = useRef(null);
     }
     return res.json();
   };
+  const synthesizeSpeech = async (text, targetLanguage) => {
+    const res = await fetch("/api/synthesize-speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, targetLanguage }),
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Voice synthesis service is unavailable right now.");
+    }
+    return res.json();
+  };
+ const dubQueueRef = useRef([]); // items: { text, targetLanguage, queuedAt }
+  const dubPlayingRef = useRef(false);
+  const dubPrefetchRef = useRef(null);
+  const DUB_STALE_MS = 20000; // safety net only — normal catch-up is handled by speeding up playback below.
 
+  const fetchDubAudio = (item) => synthesizeSpeech(item.text, item.targetLanguage).catch(() => null);
+
+  const startPrefetchIfNeeded = () => {
+    const nextItem = dubQueueRef.current[0];
+    if (!nextItem) return;
+    if (dubPrefetchRef.current && dubPrefetchRef.current.item === nextItem) return;
+    dubPrefetchRef.current = { item: nextItem, promise: fetchDubAudio(nextItem) };
+  };
+
+  const processDubQueue = async () => {
+    if (dubPlayingRef.current) return;
+
+    while (dubQueueRef.current.length && Date.now() - dubQueueRef.current[0].queuedAt > DUB_STALE_MS) {
+      const dropped = dubQueueRef.current.shift();
+      if (dubPrefetchRef.current && dubPrefetchRef.current.item === dropped) dubPrefetchRef.current = null;
+    }
+
+    const next = dubQueueRef.current.shift();
+    if (!next) return;
+    dubPlayingRef.current = true;
+
+    try {
+      let result;
+      if (dubPrefetchRef.current && dubPrefetchRef.current.item === next) {
+        result = await dubPrefetchRef.current.promise;
+        dubPrefetchRef.current = null;
+      } else {
+        result = await fetchDubAudio(next);
+      }
+      if (!result || result.error || !result.audioContent || !dubAudioRef.current) {
+        dubPlayingRef.current = false;
+        processDubQueue();
+        return;
+      }
+      const backlog = dubQueueRef.current.length;
+      const playbackRate = Math.min(1.3, 1 + backlog * 0.15);
+      dubAudioRef.current.playbackRate = playbackRate;
+      dubAudioRef.current.src = `data:audio/mp3;base64,${result.audioContent}`;
+     dubAudioRef.current.play().catch(() => {
+        dubPlayingRef.current = false;
+        processDubQueue(); // playback failed to start — don't stall, move on to the next queued item
+      });
+      startPrefetchIfNeeded();
+    } catch {
+      dubPlayingRef.current = false;
+      processDubQueue();
+    }
+  };
+
+  const playDub = (text, targetLanguage) => {
+    if (!dubEnabled || !text || !text.trim()) return;
+    if (dubQueueRef.current.length >= 5) dubQueueRef.current.shift();
+    dubQueueRef.current.push({ text, targetLanguage, queuedAt: Date.now() });
+    startPrefetchIfNeeded();
+    processDubQueue();
+  };
+
+  
   const lastTranslateAtRef = useRef(0);
   const pendingTranscriptRef = useRef("");
   const throttleTimerRef = useRef(null);
 
-  const runTranslate = async () => {
-    const transcript = pendingTranscriptRef.current;
-    if (!transcript || !transcript.trim()) return;
-    lastTranslateAtRef.current = Date.now();
-    setTranscribing(true);
+ const isFinalRef = useRef(false);
+  const translateSeqRef = useRef(0);
+  const finalQueueRef = useRef([]);
+  const finalProcessingRef = useRef(false);
+
+  const processFinalQueue = async () => {
+    if (finalProcessingRef.current) return;
+    const transcript = finalQueueRef.current.shift();
+    if (!transcript) return;
+    finalProcessingRef.current = true;
     try {
       const [primary, second] = await Promise.all([
         translateText(transcript, subtitleLang),
@@ -210,12 +293,55 @@ const mediaStreamRef = useRef(null);
       if (!primary.error) {
         setTranslated(primary.translatedText);
         setEngine(primary.engine);
+        playDub(primary.translatedText, subtitleLang);
       }
       if (second && !second.error) setTranslatedSecond(second.translatedText);
     } catch (err) {
       setLiveError(err.message || "Translation hit an error — retrying.");
     } finally {
-      setTranscribing(false);
+      finalProcessingRef.current = false;
+      processFinalQueue(); // move on to the next finalized sentence, if any — nothing is ever dropped
+    }
+  };
+
+ const recentFinalsRef = useRef([]); // last few finalized transcripts, to catch non-adjacent repeats
+
+  const queueFinalTranslation = (transcript) => {
+    const trimmed = transcript && transcript.trim();
+    if (!trimmed) return;
+    // Deepgram occasionally re-sends a recently finalized segment, not always
+    // back-to-back — check against the last several finals, not just the one before it.
+    if (recentFinalsRef.current.includes(trimmed)) return;
+    recentFinalsRef.current.push(trimmed);
+    if (recentFinalsRef.current.length > 5) recentFinalsRef.current.shift();
+    finalQueueRef.current.push(trimmed);
+    processFinalQueue();
+  };
+
+  const runTranslate = async () => {
+    // Interim-only preview: fast, throttled, and safe to discard if a newer guess arrives.
+    const transcript = pendingTranscriptRef.current;
+    if (!transcript || !transcript.trim()) return;
+    const mySeq = ++translateSeqRef.current;
+    lastTranslateAtRef.current = Date.now();
+    setTranscribing(true);
+    try {
+      const [primary, second] = await Promise.all([
+        translateText(transcript, subtitleLang),
+        secondLang ? translateText(transcript, secondLang) : Promise.resolve(null),
+      ]);
+      if (mySeq !== translateSeqRef.current) return;
+      if (!primary.error) {
+        setTranslated(primary.translatedText);
+        setEngine(primary.engine);
+      }
+      if (second && !second.error) setTranslatedSecond(second.translatedText);
+    } catch (err) {
+      if (mySeq === translateSeqRef.current) {
+        setLiveError(err.message || "Translation hit an error — retrying.");
+      }
+    } finally {
+      if (mySeq === translateSeqRef.current) setTranscribing(false);
     }
   };
 
@@ -227,17 +353,18 @@ const mediaStreamRef = useRef(null);
   const handleTranscriptUpdate = (transcript, isFinal) => {
     setRawTranscript(transcript);
     pendingTranscriptRef.current = transcript;
+    isFinalRef.current = isFinal;
 
     if (isFinal) {
       if (throttleTimerRef.current) {
         clearTimeout(throttleTimerRef.current);
         throttleTimerRef.current = null;
       }
-      runTranslate();
+      queueFinalTranslation(transcript);
       return;
     }
 
-    const minGapMs = 150;
+    const minGapMs = 700;
     const elapsed = Date.now() - lastTranslateAtRef.current;
     if (elapsed >= minGapMs) {
       runTranslate();
@@ -332,6 +459,71 @@ const mediaStreamRef = useRef(null);
   };
 
  useEffect(() => () => stopLive(), []);
+ useEffect(() => {
+    if (window.YT && window.YT.Player) return;
+    if (document.getElementById("youtube-iframe-api")) return;
+    const tag = document.createElement("script");
+    tag.id = "youtube-iframe-api";
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.body.appendChild(tag);
+  }, []);
+  useEffect(() => {
+    if (!isOn) return;
+    let cancelled = false;
+    setLiveVideoId(null);
+    fetch(`/api/live-video-id?channelId=${ch.youtubeChannelId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!cancelled && data.videoId) setLiveVideoId(data.videoId);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [ch.youtubeChannelId, isOn]);
+  useEffect(() => {
+    if (!liveVideoId) return;
+    let cancelled = false;
+
+    const createPlayer = () => {
+      if (cancelled) return;
+      if (playerRef.current) {
+        try { playerRef.current.destroy(); } catch {}
+        playerRef.current = null;
+      }
+      playerRef.current = new window.YT.Player(playerContainerId, {
+        videoId: liveVideoId,
+        playerVars: { autoplay: 1, fs: 0, controls: 0 },
+        events: {
+          onReady: (event) => {
+            event.target.setVolume(dubEnabled ? 8 : volume);
+          },
+        },
+      });
+    };
+
+    if (window.YT && window.YT.Player) {
+      createPlayer();
+    } else {
+      const prevCallback = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (typeof prevCallback === "function") prevCallback();
+        createPlayer();
+      };
+    }
+
+    return () => {
+      cancelled = true;
+      if (playerRef.current) {
+        try { playerRef.current.destroy(); } catch {}
+        playerRef.current = null;
+      }
+    };
+  }, [liveVideoId]);
+  useEffect(() => {
+    if (!playerRef.current || typeof playerRef.current.setVolume !== "function") return;
+    try {
+      playerRef.current.setVolume(dubEnabled ? 8 : volume);
+    } catch {}
+  }, [dubEnabled, volume]);
   useEffect(() => { if (!isOn) stopLive(); }, [isOn]);
   useEffect(() => { stopLive(); }, [channel]);
 
@@ -391,13 +583,7 @@ const mediaStreamRef = useRef(null);
       <div style={{ background: "#111", borderRadius: isFullscreen ? 0 : 16, overflow: "hidden", position: "relative", aspectRatio: isFullscreen ? undefined : "16/9", flex: isFullscreen ? 1 : undefined, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", border: isFullscreen ? "none" : "3px solid #222" }}>
         {isOn ? (
           <div style={{ width: "100%", height: "100%", background: "#000", position: "relative" }}>
-            <iframe
-              key={ch.youtubeChannelId}
-              src={`https://www.youtube.com/embed/live_stream?channel=${ch.youtubeChannelId}&autoplay=1&fs=0&controls=0&mute=${volume === 0 ? 1 : 0}`}
-              title={`${channel} live`}
-              style={{ width: "100%", height: "100%", border: "none" }}
-             allow="autoplay; encrypted-media; picture-in-picture"
-            />
+           <div id={playerContainerId} style={{ width: "100%", height: "100%" }} />
             <div style={{ position: "absolute", top: 12, left: 12, display: "flex", gap: 10, alignItems: "center", pointerEvents: "none" }}>
               <span style={{ background: ch.bg, color: "#fff", fontSize: 13, fontWeight: 800, padding: "3px 10px", borderRadius: 4 }}>{channel}</span>
               <Tag color={COLORS.primary}>● LIVE</Tag>
@@ -422,6 +608,7 @@ const mediaStreamRef = useRef(null);
         )}
       </div>
 
+      <audio ref={dubAudioRef} style={{ display: "none" }} onEnded={() => { dubPlayingRef.current = false; processDubQueue(); }} />
       {isOn && showSubtitle && (
     <div style={{ background: "#0d1525", border: `1px solid ${COLORS.border}`, borderTop: "none", borderRadius: isFullscreen ? 0 : "0 0 12px 12px", padding: isFullscreen ? "16px 24px" : "10px 16px", textAlign: "center", flexShrink: 0 }}>
           {liveError && (
@@ -849,7 +1036,8 @@ const LiveTV = ({ setPage }) => {
   const [subtitleLang, setSubtitleLang] = useState("Yoruba");
   const [secondLang, setSecondLang] = useState("");
  const [showSubtitle, setShowSubtitle] = useState(true);
-  const [showRawPreview, setShowRawPreview] = useState(false);
+  const [showRawPreview, setShowRawPreview] = useState(true);
+  const [dubEnabled, setDubEnabled] = useState(false);
   const [channelsMultiLang, setChannelsMultiLang] = useState({});
   const channels = allChannels.map(c => c.name);
   const idx = channels.indexOf(channel);
@@ -859,7 +1047,7 @@ const LiveTV = ({ setPage }) => {
       <p style={{ color: COLORS.textMuted, marginBottom: 20 }}>Global channels with real-time AI translation. Full audio replacement active.</p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20 }}>
         <div>
-          <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} showRawPreview={showRawPreview}channelsMultiLang={channelsMultiLang}  channelsList={allChannels} />
+          <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} showRawPreview={showRawPreview}channelsMultiLang={channelsMultiLang}  channelsList={allChannels} dubEnabled={dubEnabled}/>
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
             <Btn small onClick={() => { const ni = (idx - 1 + channels.length) % channels.length; setChannel(channels[ni]); }}>◀ Prev</Btn>
             <Btn small onClick={() => { const ni = (idx + 1) % channels.length; setChannel(channels[ni]); }}>Next ▶</Btn>
@@ -902,6 +1090,10 @@ const LiveTV = ({ setPage }) => {
                 <input type="checkbox" checked={showRawPreview} onChange={e => setShowRawPreview(e.target.checked)} id="rawpreview" />
                 <label htmlFor="rawpreview" style={{ color: COLORS.text, fontSize: 14, cursor: "pointer" }}>Show instant raw preview (untranslated, no delay)</label>
               </div>
+             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <input type="checkbox" checked={dubEnabled} onChange={e => setDubEnabled(e.target.checked)} id="dubbing" />
+                <label htmlFor="dubbing" style={{ color: COLORS.text, fontSize: 14, cursor: "pointer" }}>AI voice dubbing (Beta)</label>
+              </div> 
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                 <input type="checkbox" checked={!!channelsMultiLang[channel]} onChange={e => setChannelsMultiLang(prev => ({ ...prev, [channel]: e.target.checked }))} id="multilang" />
                 <label htmlFor="multilang" style={{ color: COLORS.text, fontSize: 14, cursor: "pointer" }}>Auto-detect multiple speakers/languages (this channel)</label>
