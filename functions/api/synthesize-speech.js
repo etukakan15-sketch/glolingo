@@ -70,6 +70,14 @@ const VOICE_MAP = {
   },
 };
 
+// YarnGPT covers Nigerian languages Google Cloud TTS does not support at all
+// (Yoruba, Igbo, Hausa). These voices were confirmed by manual testing —
+// see functions/api/synthesize-speech.js history for details.
+const YARNGPT_VOICE_MAP = {
+  Yoruba: "Idera",
+  Igbo: "Chinenye",
+  Hausa: "Umar",
+};
 // Below this pitch (Hz), treat the detected voice as male; above, female.
 // Anything in between falls back to the language's default (male).
 const PITCH_MALE_MAX_HZ = 165;
@@ -107,6 +115,34 @@ function buildSSML(text, sourcePitchHz) {
   return `<speak><prosody pitch="${pitchShift}">${escapeXml(text)}</prosody></speak>`;
 }
 
+// YarnGPT returns raw MP3 bytes directly (not JSON), so we base64-encode
+// it ourselves to match the shape our existing Google TTS response uses.
+async function synthesizeWithYarnGPT(text, voiceName, apiKey) {
+  const response = await fetch("https://yarngpt.ai/api/v1/tts", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text, voice: voiceName, response_format: "mp3" }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => "");
+    throw new Error(`YarnGPT error (${response.status}): ${errBody || "request failed"}`);
+  }
+
+  const audioBuffer = await response.arrayBuffer();
+  // btoa needs a binary string, not raw bytes — build it in chunks to avoid
+  // blowing the call stack on longer audio clips.
+  const bytes = new Uint8Array(audioBuffer);
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
 export async function onRequestPost(context) {
   try {
     const { text, targetLanguage, sourcePitchHz, sourceGender } = await context.request.json();
@@ -115,6 +151,17 @@ export async function onRequestPost(context) {
       return Response.json({ error: "Missing text or targetLanguage" }, { status: 400 });
     }
 
+    // Route Nigerian languages Google TTS doesn't support to YarnGPT instead.
+if (YARNGPT_VOICE_MAP[targetLanguage]) {
+  try {
+    const yarnVoice = YARNGPT_VOICE_MAP[targetLanguage];
+    const yarnApiKey = context.env.YARNGPT_API_KEY;
+    const audioContent = await synthesizeWithYarnGPT(text, yarnVoice, yarnApiKey);
+    return Response.json({ audioContent, voiceUsed: yarnVoice });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
     const voice = pickVoice(targetLanguage, sourceGender, sourcePitchHz);
     if (!voice) {
       return Response.json(
