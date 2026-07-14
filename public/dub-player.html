@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head><title>GloLingo Dub Audio</title></head>
+<body style="background:#0A0E1A;color:#7A8BA0;font-family:sans-serif;text-align:center;padding-top:40px;">
+  <div>GloLingo dub audio — keep this window open while captioning</div>
+  <audio id="dubAudio"></audio>
+  <script>
+    console.log("[POPUP] script loaded");
+    const channel = new BroadcastChannel("glolingo-dub");
+    const audio = document.getElementById("dubAudio");
+    channel.onmessage = (event) => {
+      console.log("[POPUP] message received:", event.data && event.data.type);
+      const msg = event.data;
+      if (msg && msg.type === "play") {
+        audio.playbackRate = msg.playbackRate;
+        audio.src = "data:audio/mp3;base64," + msg.audioContent;
+        audio.play().then(() => {
+          console.log("[POPUP] play() succeeded, duration:", audio.duration, "seconds, content length:", msg.audioContent ? msg.audioContent.length : 0);
+        }).catch((err) => {
+          console.error("[POPUP] play() FAILED:", err.name, err.message);
+          channel.postMessage({ type: "error" });
+        });
+      }
+    };
+    audio.addEventListener("ended", () => {
+      console.log("[POPUP] audio ended");
+      channel.postMessage({ type: "ended" });
+    });
+    audio.addEventListener("error", (e) => {
+      console.error("[POPUP] audio element error:", audio.error);
+      channel.postMessage({ type: "error" });
+    });
+  </script>
+</body>
+</html>
