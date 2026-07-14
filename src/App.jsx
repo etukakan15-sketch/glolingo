@@ -253,6 +253,7 @@ const mediaStreamRef = useRef(null);
       const backlog = dubQueueRef.current.length;
       const playbackRate = Math.min(1.3, 1 + backlog * 0.15);
       setTranslated(next.text); // show this caption right as its own audio starts, not whenever translation happened to finish
+      console.log("[DUB DEBUG] channel:", !!dubChannelRef.current, "popup:", !!dubPopupRef.current, "popup.closed check:", (() => { try { return dubPopupRef.current?.closed; } catch (e) { return "THREW: " + e.message; } })());
       if (dubChannelRef.current && dubPopupRef.current && !dubPopupRef.current.closed) {
         dubChannelRef.current.postMessage({
           type: "play",
