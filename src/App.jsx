@@ -27,21 +27,21 @@ const LANGUAGES = ["English","Spanish","French","Mandarin","Arabic","Portuguese"
 // Maps each displayed language name to the engine + language code used to
 // actually call the translation API. Keep in sync with functions/api/translate-text.js.
 const LANGUAGE_ENGINES = {
-  English: { engine: "deepl", code: "EN" },
-  Spanish: { engine: "deepl", code: "ES" },
-  French: { engine: "deepl", code: "FR" },
-  Mandarin: { engine: "deepl", code: "ZH" },
-  Arabic: { engine: "deepl", code: "AR" },
-  Portuguese: { engine: "deepl", code: "PT-PT" },
-  German: { engine: "deepl", code: "DE" },
-  Japanese: { engine: "deepl", code: "JA" },
-  Korean: { engine: "deepl", code: "KO" },
-  Turkish: { engine: "deepl", code: "TR" },
-  Russian: { engine: "deepl", code: "RU" },
-  Italian: { engine: "deepl", code: "IT" },
-  Dutch: { engine: "deepl", code: "NL" },
-  Polish: { engine: "deepl", code: "PL" },
-  Vietnamese: { engine: "deepl", code: "VI" },
+  English: { engine: "google", code: "en" },
+  Spanish: { engine: "google", code: "es" },
+  French: { engine: "google", code: "fr" },
+  Mandarin: { engine: "google", code: "zh" },
+  Arabic: { engine: "google", code: "ar" },
+  Portuguese: { engine: "google", code: "pt" },
+  German: { engine: "google", code: "de" },
+  Japanese: { engine: "google", code: "ja" },
+  Korean: { engine: "google", code: "ko" },
+  Turkish: { engine: "google", code: "tr" },
+  Russian: { engine: "google", code: "ru" },
+  Italian: { engine: "google", code: "it" },
+  Dutch: { engine: "google", code: "nl" },
+  Polish: { engine: "google", code: "pl" },
+  Vietnamese: { engine: "google", code: "vi" },
   Hindi: { engine: "google", code: "hi" },
   Bengali: { engine: "google", code: "bn" },
   Thai: { engine: "google", code: "th" },
@@ -170,6 +170,8 @@ const TVScreen = ({ channel, volume, isOn, subtitleLang, secondLang, showSubtitl
 
   // ── Live tab-audio captioning (real streaming via Deepgram) ──────────────
  const  dubAudioRef = useRef(null);
+ const dubPopupRef = useRef(null);
+ const dubChannelRef = useRef(null);
  const playerRef = useRef(null);
   const playerContainerId = useRef(`yt-player-${Math.random().toString(36).slice(2)}`).current;
   const [liveVideoId, setLiveVideoId] = useState(null);
@@ -227,6 +229,7 @@ const mediaStreamRef = useRef(null);
 
     while (dubQueueRef.current.length && Date.now() - dubQueueRef.current[0].queuedAt > DUB_STALE_MS) {
       const dropped = dubQueueRef.current.shift();
+      console.warn("[DUB] stale, dropping:", dropped.text);
       if (dubPrefetchRef.current && dubPrefetchRef.current.item === dropped) dubPrefetchRef.current = null;
     }
 
@@ -242,19 +245,30 @@ const mediaStreamRef = useRef(null);
       } else {
         result = await fetchDubAudio(next);
       }
-      if (!result || result.error || !result.audioContent || !dubAudioRef.current) {
+     if (!result || result.error || !result.audioContent || !dubAudioRef.current) {
         dubPlayingRef.current = false;
         processDubQueue();
         return;
       }
       const backlog = dubQueueRef.current.length;
       const playbackRate = Math.min(1.3, 1 + backlog * 0.15);
-      dubAudioRef.current.playbackRate = playbackRate;
-      dubAudioRef.current.src = `data:audio/mp3;base64,${result.audioContent}`;
-     dubAudioRef.current.play().catch(() => {
-        dubPlayingRef.current = false;
-        processDubQueue(); // playback failed to start — don't stall, move on to the next queued item
-      });
+      setTranslated(next.text); // show this caption right as its own audio starts, not whenever translation happened to finish
+      if (dubChannelRef.current && dubPopupRef.current && !dubPopupRef.current.closed) {
+        dubChannelRef.current.postMessage({
+          type: "play",
+          audioContent: result.audioContent,
+          playbackRate,
+        });
+      } else {
+        // Popup unavailable (blocked or closed) — fall back to local playback,
+        // accepting the tab-audio feedback risk rather than losing dubbing entirely.
+        dubAudioRef.current.playbackRate = playbackRate;
+        dubAudioRef.current.src = `data:audio/mp3;base64,${result.audioContent}`;
+        dubAudioRef.current.play().catch(() => {
+          dubPlayingRef.current = false;
+          processDubQueue();
+        });
+      }
       startPrefetchIfNeeded();
     } catch {
       dubPlayingRef.current = false;
@@ -263,19 +277,26 @@ const mediaStreamRef = useRef(null);
   };
 
   const playDub = (text, targetLanguage) => {
-    if (!dubEnabled || !text || !text.trim()) return;
-    if (dubQueueRef.current.length >= 5) dubQueueRef.current.shift();
+    if (!dubEnabledRef.current || !text || !text.trim()) return;
+   if (dubQueueRef.current.length >= 5) {
+      console.warn("[DUB] queue full, dropping oldest:", dubQueueRef.current[0]?.text);
+      dubQueueRef.current.shift();
+    }
     dubQueueRef.current.push({ text, targetLanguage, queuedAt: Date.now() });
     startPrefetchIfNeeded();
     processDubQueue();
   };
 
   
+  const dubEnabledRef = useRef(dubEnabled);
+  useEffect(() => { dubEnabledRef.current = dubEnabled; }, [dubEnabled]);
   const lastTranslateAtRef = useRef(0);
   const pendingTranscriptRef = useRef("");
   const throttleTimerRef = useRef(null);
 
- const isFinalRef = useRef(false);
+ const pendingFinalMergeRef = useRef("");
+  const finalMergeTimerRef = useRef(null);
+  const isFinalRef = useRef(false);
   const translateSeqRef = useRef(0);
   const finalQueueRef = useRef([]);
   const finalProcessingRef = useRef(false);
@@ -291,9 +312,12 @@ const mediaStreamRef = useRef(null);
         secondLang ? translateText(transcript, secondLang) : Promise.resolve(null),
       ]);
       if (!primary.error) {
-        setTranslated(primary.translatedText);
         setEngine(primary.engine);
-        playDub(primary.translatedText, subtitleLang);
+        if (dubEnabledRef.current) {
+          playDub(primary.translatedText, subtitleLang);
+        } else {
+          setTranslated(primary.translatedText);
+        }
       }
       if (second && !second.error) setTranslatedSecond(second.translatedText);
     } catch (err) {
@@ -356,11 +380,35 @@ const mediaStreamRef = useRef(null);
     isFinalRef.current = isFinal;
 
     if (isFinal) {
+      console.warn("[FINAL RAW]", JSON.stringify(transcript));
       if (throttleTimerRef.current) {
         clearTimeout(throttleTimerRef.current);
         throttleTimerRef.current = null;
       }
-      queueFinalTranslation(transcript);
+      // Short finals often get cut off mid-thought by Deepgram's endpointing.
+      // Hold briefly so a following short chunk can join it into one fuller line
+      // instead of racing through translation/dubbing alone and expiring too fast.
+      const MERGE_WORD_THRESHOLD = 6;
+      const wordCount = transcript.trim().split(/\s+/).length;
+      pendingFinalMergeRef.current = pendingFinalMergeRef.current
+        ? `${pendingFinalMergeRef.current} ${transcript.trim()}`
+        : transcript.trim();
+      if (finalMergeTimerRef.current) {
+        clearTimeout(finalMergeTimerRef.current);
+        finalMergeTimerRef.current = null;
+      }
+      if (wordCount >= MERGE_WORD_THRESHOLD) {
+        const merged = pendingFinalMergeRef.current;
+        pendingFinalMergeRef.current = "";
+        queueFinalTranslation(merged);
+      } else {
+        finalMergeTimerRef.current = setTimeout(() => {
+          finalMergeTimerRef.current = null;
+          const merged = pendingFinalMergeRef.current;
+          pendingFinalMergeRef.current = "";
+          if (merged) queueFinalTranslation(merged);
+        }, 500);
+      }
       return;
     }
 
@@ -395,6 +443,22 @@ const mediaStreamRef = useRef(null);
 
   const startLive = async () => {
     setLiveError("");
+    if (dubEnabledRef.current) {
+      dubChannelRef.current = new BroadcastChannel("glolingo-dub");
+      dubChannelRef.current.onmessage = (event) => {
+        const msg = event.data;
+        if (msg && (msg.type === "ended" || msg.type === "error")) {
+          dubPlayingRef.current = false;
+          processDubQueue();
+        }
+      };
+      const popup = window.open("/dub-player.html", "glolingo_dub_player", "width=320,height=140");
+      if (!popup) {
+        setLiveError("Please allow popups for GloLingo to enable dubbed audio.");
+      } else {
+        dubPopupRef.current = popup;
+      }
+    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
       setLiveError("Live captions need a Chromium browser (Chrome/Edge) on desktop.");
       return;
