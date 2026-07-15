@@ -117,8 +117,39 @@ function buildSSML(text, sourcePitchHz) {
 
 // YarnGPT returns raw MP3 bytes directly (not JSON), so we base64-encode
 // it ourselves to match the shape our existing Google TTS response uses.
-async function synthesizeWithYarnGPT(text, voiceName, apiKey) {
+async function synthesizeWithYarnGPT(text, voiceName, apiKey, attempt = 1) {
   const response = await fetch("https://yarngpt.ai/api/v1/tts", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text, voice: voiceName, response_format: "mp3" }),
+  });
+
+  if (response.status === 429 && attempt < 3) {
+    // Back off and retry: 800ms, then 1600ms. Nigerian-language dubbing hits
+    // YarnGPT's rate limit under sustained live captioning — a couple of
+    // retries here smooths over that instead of silently dropping the line.
+    const waitMs = 800 * attempt;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return synthesizeWithYarnGPT(text, voiceName, apiKey, attempt + 1);
+  }
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => "");
+    throw new Error(`YarnGPT error (${response.status}): ${errBody || "request failed"}`);
+  }
+
+  const audioBuffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(audioBuffer);
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -158,6 +189,7 @@ if (YARNGPT_VOICE_MAP[targetLanguage]) {
     const yarnApiKey = context.env.YARNGPT_API_KEY;
     const audioContent = await synthesizeWithYarnGPT(text, yarnVoice, yarnApiKey);
     return Response.json({ audioContent, voiceUsed: yarnVoice });
+    
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 });
   }
