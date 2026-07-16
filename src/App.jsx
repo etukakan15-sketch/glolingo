@@ -213,9 +213,24 @@ const mediaStreamRef = useRef(null);
  const dubQueueRef = useRef([]); // items: { text, targetLanguage, queuedAt }
   const dubPlayingRef = useRef(false);
   const dubPrefetchRef = useRef(null);
+  const lastYarnGPTCallAtRef = useRef(0);
   const DUB_STALE_MS = 20000; // safety net only — normal catch-up is handled by speeding up playback below.
+  // Languages routed to YarnGPT on the backend (see functions/api/synthesize-speech.js).
+// YarnGPT rate-limits aggressively, so we space requests out on our end instead
+// of bursting one per finalized sentence and relying purely on server-side retries.
+const YARNGPT_LANGUAGES = new Set(["Yoruba", "Igbo", "Hausa"]);
+const YARNGPT_MIN_GAP_MS = 1200;
 
-  const fetchDubAudio = (item) => synthesizeSpeech(item.text, item.targetLanguage).catch(() => null);
+ const fetchDubAudio = async (item) => {
+  if (YARNGPT_LANGUAGES.has(item.targetLanguage)) {
+    const elapsed = Date.now() - lastYarnGPTCallAtRef.current;
+    if (elapsed < YARNGPT_MIN_GAP_MS) {
+      await new Promise((resolve) => setTimeout(resolve, YARNGPT_MIN_GAP_MS - elapsed));
+    }
+    lastYarnGPTCallAtRef.current = Date.now();
+  }
+  return synthesizeSpeech(item.text, item.targetLanguage).catch(() => null);
+};
 
   const startPrefetchIfNeeded = () => {
     const nextItem = dubQueueRef.current[0];
