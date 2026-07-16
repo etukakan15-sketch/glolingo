@@ -2592,6 +2592,8 @@ export default function GloLingo() {
   const [page, setPage] = useState(
     window.location.pathname === "/success" ? "success" : "home"
   );
+  const isMobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(false);
   const [toast, setToast] = useState(null);
 
   const showToast = (msg) => setToast(msg);
@@ -2619,44 +2621,80 @@ export default function GloLingo() {
 
   return (
     <div style={{ minHeight: "100vh", background: COLORS.darker, color: COLORS.text, fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
-      {/* Navbar */}
+     {/* Navbar */}
       <div style={{ background: COLORS.dark, borderBottom: `1px solid ${COLORS.border}`, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px", display: "flex", alignItems: "center", height: 60, gap: 16 }}>
           <div onClick={() => setPage("home")} style={{ fontWeight: 900, fontSize: 22, color: COLORS.primary, cursor: "pointer", letterSpacing: -0.5, flexShrink: 0 }}>
             Glo<span style={{ color: COLORS.text }}>Lingo</span>
           </div>
-          {/* Desktop nav */}
-          <div style={{ display: "flex", gap: 4, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
+          {isMobile ? (
+            <button onClick={() => setNavOpen(v => !v)}
+              style={{ background: "transparent", border: "none", color: COLORS.text, fontSize: 22, cursor: "pointer", padding: "4px 8px", marginLeft: "auto" }}>
+              ☰
+            </button>
+          ) : (
+            <>
+              {/* Desktop nav */}
+              <div style={{ display: "flex", gap: 4, flex: 1, overflowX: "auto", scrollbarWidth: "none" }}>
+                {NAV_ITEMS.filter(n => n.id !== "signup").map(n => (
+                  <button key={n.id} onClick={() => setPage(n.id)}
+                    style={{ background: page === n.id ? `${COLORS.primary}22` : "transparent", color: page === n.id ? COLORS.primary : COLORS.textMuted,
+                      border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", flexShrink: 0 }}>
+                    {n.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
+               {currentUser?.email === "etukakan15@gmail.com" && (
+                    <>
+                      <Btn small variant="ghost" onClick={() => setPage("admin")}>Admin</Btn>
+                      <Btn small variant="ghost" onClick={() => setPage("owner")} style={{ color: COLORS.gold }}>Owner</Btn>
+                    </>
+                  )}
+                {currentUser ? (
+                  <>
+                    <div style={{ fontSize: 12, color: COLORS.textMuted, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {currentUser.email}
+                    </div>
+                    <Btn small variant="outline" onClick={handleLogout}>Sign Out</Btn>
+                  </>
+                ) : (
+                  <>
+                    <Btn small variant="outline" onClick={() => setPage("login")}>Sign In</Btn>
+                    <Btn small onClick={() => setPage("signup")}>Sign Up</Btn>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        {isMobile && navOpen && (
+          <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: "8px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
             {NAV_ITEMS.filter(n => n.id !== "signup").map(n => (
-              <button key={n.id} onClick={() => setPage(n.id)}
+              <button key={n.id} onClick={() => { setPage(n.id); setNavOpen(false); }}
                 style={{ background: page === n.id ? `${COLORS.primary}22` : "transparent", color: page === n.id ? COLORS.primary : COLORS.textMuted,
-                  border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", flexShrink: 0 }}>
+                  border: "none", borderRadius: 8, padding: "10px 12px", cursor: "pointer", fontWeight: 600, fontSize: 14, textAlign: "left" }}>
                 {n.label}
               </button>
             ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
-           {currentUser?.email === "etukakan15@gmail.com" && (
+            <div style={{ display: "flex", gap: 8, paddingTop: 8, borderTop: `1px solid ${COLORS.border}`, marginTop: 4, flexWrap: "wrap" }}>
+              {currentUser?.email === "etukakan15@gmail.com" && (
                 <>
-                  <Btn small variant="ghost" onClick={() => setPage("admin")}>Admin</Btn>
-                  <Btn small variant="ghost" onClick={() => setPage("owner")} style={{ color: COLORS.gold }}>Owner</Btn>
+                  <Btn small variant="ghost" onClick={() => { setPage("admin"); setNavOpen(false); }}>Admin</Btn>
+                  <Btn small variant="ghost" onClick={() => { setPage("owner"); setNavOpen(false); }} style={{ color: COLORS.gold }}>Owner</Btn>
                 </>
               )}
-            {currentUser ? (
-              <>
-                <div style={{ fontSize: 12, color: COLORS.textMuted, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {currentUser.email}
-                </div>
-                <Btn small variant="outline" onClick={handleLogout}>Sign Out</Btn>
-              </>
-            ) : (
-              <>
-                <Btn small variant="outline" onClick={() => setPage("login")}>Sign In</Btn>
-                <Btn small onClick={() => setPage("signup")}>Sign Up</Btn>
-              </>
-            )}
+              {currentUser ? (
+                <Btn small variant="outline" onClick={() => { handleLogout(); setNavOpen(false); }}>Sign Out</Btn>
+              ) : (
+                <>
+                  <Btn small variant="outline" onClick={() => { setPage("login"); setNavOpen(false); }}>Sign In</Btn>
+                  <Btn small onClick={() => { setPage("signup"); setNavOpen(false); }}>Sign Up</Btn>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Page Content */}
