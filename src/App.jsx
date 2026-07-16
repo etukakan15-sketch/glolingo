@@ -18,6 +18,20 @@ const COLORS = {
   purple: "#8B5CF6",
 };
 
+// Simple viewport-width based mobile detection, used to switch fixed-column
+// grids to a stacked layout on narrow screens.
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 // Languages with real translation support: DeepL handles the first group,
 // Google Cloud Translation handles the second (see functions/api/translate-text.js).
 // Nigerian Pidgin, Ibibio, and Jamaican Patois are not yet supported by any
@@ -1109,6 +1123,7 @@ const AddCustomChannel = ({ customChannels, setCustomChannels }) => {
 // ─── LIVE TV ─────────────────────────────────────────────────────────────────
 const LiveTV = ({ setPage }) => {
   const [customChannels, setCustomChannels] = useState(() => loadCustomChannels());
+  const isMobile = useIsMobile();
   const allChannels = [...TV_CHANNELS, ...customChannels];
   const [channel, setChannel] = useState(TV_CHANNELS[0].name);
   const [volume, setVolume] = useState(50);
@@ -1125,7 +1140,7 @@ const LiveTV = ({ setPage }) => {
     <div style={{ padding: 24 }}>
       <h2 style={{ color: COLORS.text, marginBottom: 6 }}>Live TV</h2>
       <p style={{ color: COLORS.textMuted, marginBottom: 20 }}>Global channels with real-time AI translation. Full audio replacement active.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20 }}>
+     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: 20 }}>
         <div>
           <TVScreen channel={channel} volume={volume} isOn={isOn} subtitleLang={subtitleLang} secondLang={secondLang} showSubtitle={showSubtitle} showRawPreview={showRawPreview}channelsMultiLang={channelsMultiLang}  channelsList={allChannels} dubEnabled={dubEnabled}/>
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
@@ -1195,6 +1210,7 @@ const LiveTV = ({ setPage }) => {
 // ─── MUSIC ────────────────────────────────────────────────────────────────────
 const Music = () => {
   const [playing, setPlaying] = useState(false);
+  const isMobile = useIsMobile();
   const [lang, setLang] = useState("Yoruba");
   const [karaoke, setKaraoke] = useState(true);
   const [progress, setProgress] = useState(38);
@@ -1250,7 +1266,7 @@ const Music = () => {
     <div style={{ padding: 24 }}>
       <h2 style={{ color: COLORS.text, marginBottom: 6 }}>Music</h2>
       <p style={{ color: COLORS.textMuted, marginBottom: 24 }}>Translate any song in real-time. Karaoke mode syncs lyrics to the beat.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 280px", gap: 20 }}>
         <div>
           <Card style={{ marginBottom: 16 }}>
             <div style={{ display: "flex", gap: 20, alignItems: "center", marginBottom: 20 }}>
@@ -1316,6 +1332,7 @@ const Music = () => {
 // ─── REMOTE CONTROL ───────────────────────────────────────────────────────────
 const Remote = () => {
   const [volume, setVolume] = useState(50);
+  const isMobile = useIsMobile();
   const [channel, setChannel] = useState(5);
   const [isOn, setIsOn] = useState(true);
   const [input, setInput] = useState("HDMI 1");
@@ -1331,7 +1348,7 @@ const Remote = () => {
     <div style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
       <h2 style={{ color: COLORS.text, marginBottom: 6 }}>Smart Remote</h2>
       <p style={{ color: COLORS.textMuted, marginBottom: 20 }}>Control your TV, soundbar, and streaming devices from here.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "240px 1fr", gap: 20 }}>
         <div>
           <Card style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ textAlign: "center", marginBottom: 4 }}>
