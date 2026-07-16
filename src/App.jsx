@@ -1444,6 +1444,7 @@ const CastTV = () => {
 // ─── MEETING ─────────────────────────────────────────────────────────────────
 const Meeting = () => {
   const [inMeeting, setInMeeting] = useState(false);
+  const isMobile = useIsMobile();
   const [myLang, setMyLang] = useState("English");
   const [roomId, setRoomId] = useState("GLO-" + Math.random().toString(36).slice(2,8).toUpperCase());
   const [participants] = useState([
@@ -1481,7 +1482,7 @@ const Meeting = () => {
         </div>
       ) : (
         <div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(auto-fit,minmax(200px,1fr))", gap: 14, marginBottom: 16 }}>
             <div style={{ background: `linear-gradient(135deg,${COLORS.card},${COLORS.cardLight})`, borderRadius: 12, aspectRatio: "4/3", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", border: `2px solid ${COLORS.primary}` }}>
               <div style={{ fontSize: 32 }}>👤</div>
               <div style={{ color: COLORS.text, fontWeight: 700, marginTop: 6 }}>You</div>
