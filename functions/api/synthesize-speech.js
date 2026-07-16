@@ -150,30 +150,6 @@ async function synthesizeWithYarnGPT(text, voiceName, apiKey, attempt = 1) {
   }
   return btoa(binary);
 }
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ text, voice: voiceName, response_format: "mp3" }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => "");
-    throw new Error(`YarnGPT error (${response.status}): ${errBody || "request failed"}`);
-  }
-
-  const audioBuffer = await response.arrayBuffer();
-  // btoa needs a binary string, not raw bytes — build it in chunks to avoid
-  // blowing the call stack on longer audio clips.
-  const bytes = new Uint8Array(audioBuffer);
-  let binary = "";
-  const chunkSize = 8192;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
 export async function onRequestPost(context) {
   try {
     const { text, targetLanguage, sourcePitchHz, sourceGender } = await context.request.json();
